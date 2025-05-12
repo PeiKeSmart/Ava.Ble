@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36105.17
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ava.Ble", "Ava.Ble\Ava.Ble.csproj", "{BD705250-A4DE-4C3D-BA2B-53A0CB378D4F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalonia.Ble", "Avalonia.Ble\Avalonia.Ble.csproj", "{1E746E45-E19A-4554-AE57-1F1AA6241B11}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{BD705250-A4DE-4C3D-BA2B-53A0CB378D4F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BD705250-A4DE-4C3D-BA2B-53A0CB378D4F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BD705250-A4DE-4C3D-BA2B-53A0CB378D4F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1E746E45-E19A-4554-AE57-1F1AA6241B11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1E746E45-E19A-4554-AE57-1F1AA6241B11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1E746E45-E19A-4554-AE57-1F1AA6241B11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1E746E45-E19A-4554-AE57-1F1AA6241B11}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
