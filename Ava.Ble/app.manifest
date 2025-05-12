@@ -15,4 +15,10 @@
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
     </application>
   </compatibility>
+
+  <!-- Windows 10 and Windows 11 Bluetooth capabilities -->
+  <capabilities>
+    <capability name="internetClient" />
+    <deviceCapability name="bluetooth" />
+  </capabilities>
 </assembly>
