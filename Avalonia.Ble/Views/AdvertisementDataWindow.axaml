@@ -34,12 +34,11 @@
         <!-- 原始广播数据 -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
             <TextBlock Text="原始广播数据" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
-            <Border BorderBrush="Gray" BorderThickness="1" Padding="5">
+            <Border BorderBrush="Gray" BorderThickness="1" Padding="5" ScrollViewer.VerticalScrollBarVisibility="Disabled">
                 <TextBlock Text="{Binding RawData}"
                           TextWrapping="Wrap"
                           FontFamily="Consolas"
                           FontSize="14"
-                          MinHeight="100"
                           Margin="5"/>
             </Border>
         </StackPanel>
