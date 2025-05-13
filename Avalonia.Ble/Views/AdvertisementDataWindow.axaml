@@ -33,7 +33,14 @@
 
         <!-- 原始广播数据 -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
-            <TextBlock Text="原始广播数据" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="原始广播数据" FontWeight="Bold" FontSize="16" Margin="0,0,0,5" VerticalAlignment="Center"/>
+                <Button Content="复制"
+                        Command="{Binding CopyRawDataCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                        Grid.Column="1"
+                        Margin="5,0,0,0"/>
+            </Grid>
             <Border BorderBrush="Gray" BorderThickness="1" Padding="5" ScrollViewer.VerticalScrollBarVisibility="Disabled">
                 <TextBlock Text="{Binding RawData}"
                           TextWrapping="Wrap"
