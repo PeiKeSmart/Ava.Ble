@@ -382,7 +382,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var window = new AdvertisementDataWindow(device);
         if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
-            window.ShowDialog(desktop.MainWindow);
+            window.ShowDialog(desktop.MainWindow!);
         }
     }
 }

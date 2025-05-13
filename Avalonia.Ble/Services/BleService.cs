@@ -148,7 +148,7 @@ public class BleService {
 
                     var adData = new BleAdvertisementData
                     {
-                        Length = (byte)(data.Length + 1), // +1 for type
+                        Length = (byte)data.Length, // 实际数据长度
                         Type = section.DataType,
                         Value = data
                     };
@@ -156,7 +156,7 @@ public class BleService {
                     advertisementDataList.Add(adData);
 
                     // 添加到原始数据字符串
-                    rawData += $"{adData.Length:X2} {adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
+                    rawData += $"{adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
                 }
             }
 
