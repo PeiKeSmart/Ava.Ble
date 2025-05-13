@@ -17,10 +17,10 @@
     <Grid RowDefinitions="*,Auto" Margin="10">
         <ae:TextEditor Grid.Row="0"
                        x:Name="RuleTextEditor"
+                       Document="{Binding RuleDocument}"
                        FontFamily="Cascadia Mono, Consolas, monospace"
                        FontSize="14"
                        ShowLineNumbers="True"
-                       SyntaxHighlighting="XML" 
                        Margin="0,0,0,10"/>
                        <!-- TODO: 后续可以考虑为规则创建自定义的语法高亮 -->
 
