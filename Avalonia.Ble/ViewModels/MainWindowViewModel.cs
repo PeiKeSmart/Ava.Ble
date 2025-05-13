@@ -325,18 +325,28 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 if (existingDeviceInMasterList != null)
                 {
-                    // 更新现有实例的属性
-                    // Name update logic: Update if current name is poor and new one is potentially better.
-                    if (string.IsNullOrEmpty(existingDeviceInMasterList.Name) || existingDeviceInMasterList.Name == "未知设备")
+                    // Update existing instance's properties
+                    string newNameFromEvent = deviceInfoFromEvent.Name;
+
+                    if (!string.IsNullOrEmpty(newNameFromEvent) && newNameFromEvent != "未知设备")
                     {
-                        existingDeviceInMasterList.Name = deviceInfoFromEvent.Name;
+                        // Event brings a valid, specific name. Update if different.
+                        if (existingDeviceInMasterList.Name != newNameFromEvent)
+                        {
+                             existingDeviceInMasterList.Name = newNameFromEvent;
+                        }
                     }
-                    else if (!string.IsNullOrEmpty(deviceInfoFromEvent.Name) && deviceInfoFromEvent.Name != "未知设备")
+                    else if (string.IsNullOrEmpty(existingDeviceInMasterList.Name) || existingDeviceInMasterList.Name == "未知设备")
                     {
-                        // If current name is valid, only update if new name is also valid (not "未知设备")
-                        existingDeviceInMasterList.Name = deviceInfoFromEvent.Name;
+                        // Event name is non-specific (null, empty, or "未知设备")
+                        // AND current name is also non-specific (null, empty, or "未知设备").
+                        // Ensure it's "未知设备". Avoid redundant assignments if already "未知设备".
+                        if (existingDeviceInMasterList.Name != "未知设备") 
+                        {
+                             existingDeviceInMasterList.Name = "未知设备";
+                        }
                     }
-                    // else, retain current name if it's good and new one is "未知设备" or empty.
+                    // If event name is non-specific but current name is specific, do nothing (preserve the good name).
 
                     existingDeviceInMasterList.Rssi = deviceInfoFromEvent.Rssi;
                     existingDeviceInMasterList.LastSeen = deviceInfoFromEvent.LastSeen;
@@ -350,12 +360,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
                 else
                 {
-                    // 设备未找到，添加新的 BleDeviceInfo 实例。
-                    // 从 deviceInfoFromEvent 创建副本，因为它可能被发送者重用。
+                    // Device not found, add new BleDeviceInfo instance.
+                    // Ensure name is "未知设备" if not a valid specific name from the event.
                     var newDeviceToAdd = new BleDeviceInfo
                     {
                         Id = deviceInfoFromEvent.Id,
-                        Name = deviceInfoFromEvent.Name,
+                        Name = (!string.IsNullOrEmpty(deviceInfoFromEvent.Name) && deviceInfoFromEvent.Name != "未知设备") ? deviceInfoFromEvent.Name : "未知设备",
                         Address = deviceInfoFromEvent.Address,
                         Rssi = deviceInfoFromEvent.Rssi,
                         LastSeen = deviceInfoFromEvent.LastSeen,
@@ -364,13 +374,13 @@ public partial class MainWindowViewModel : ViewModelBase
                         IsConnected = deviceInfoFromEvent.IsConnected,
                         AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData),
                         RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData
-                        // Services 列表初始为空
+                        // Services list is initially empty
                     };
                     _discoveredDevices.Add(newDeviceToAdd);
                 }
             }
-            // _discoveredDevices 已就地更新（添加了项或更改了现有项的属性）。
-            // ApplyFilter 将使用这些稳定的实例。
+            // _discoveredDevices has been updated in-place (item added or properties of existing item changed).
+            // ApplyFilter will use these stable instances.
             ApplyFilter();
         });
     }
