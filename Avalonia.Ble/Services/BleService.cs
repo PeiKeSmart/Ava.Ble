@@ -64,8 +64,15 @@ public class BleService {
     {
         _watcher = new BluetoothLEAdvertisementWatcher
         {
-            ScanningMode = BluetoothLEScanningMode.Active
+            ScanningMode = BluetoothLEScanningMode.Active,
+            SignalStrengthFilter = new BluetoothSignalStrengthFilter
+            {
+                SamplingInterval = TimeSpan.FromMilliseconds(1000),
+                // 不设置信号强度阈值，以接收所有设备
+            }
         };
+
+        // 不设置广播过滤器，以接收所有类型的广播数据
 
         _watcher.Received += OnAdvertisementReceived;
         _watcher.Stopped += OnWatcherStopped;
@@ -148,15 +155,83 @@ public class BleService {
 
                     var adData = new BleAdvertisementData
                     {
-                        Length = (byte)data.Length, // 实际数据长度
+                        Length = (byte)(data.Length + 1), // 数据长度 + 类型字段(1字节)
                         Type = section.DataType,
                         Value = data
                     };
 
                     advertisementDataList.Add(adData);
 
-                    // 添加到原始数据字符串
-                    rawData += $"{adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
+                    // 添加到原始数据字符串，包含长度字段
+                    rawData += $"{adData.Length:X2} {adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
+                }
+            }
+
+            // 获取制造商特定数据
+            if (args.Advertisement.ManufacturerData != null && args.Advertisement.ManufacturerData.Count > 0)
+            {
+                foreach (var manufacturerData in args.Advertisement.ManufacturerData)
+                {
+                    var reader = Windows.Storage.Streams.DataReader.FromBuffer(manufacturerData.Data);
+                    byte[] data = new byte[manufacturerData.Data.Length];
+                    reader.ReadBytes(data);
+
+                    var adData = new BleAdvertisementData
+                    {
+                        Length = (byte)(data.Length + 3), // 数据长度 + 类型字段(1字节) + 公司ID(2字节)
+                        Type = 0xFF, // Manufacturer Specific Data
+                        Value = data
+                    };
+
+                    advertisementDataList.Add(adData);
+
+                    // 添加到原始数据字符串，包含长度字段
+                    rawData += $"{adData.Length:X2} FF {manufacturerData.CompanyId:X4} {BitConverter.ToString(data).Replace("-", " ")} ";
+                }
+            }
+
+            // 获取服务UUID数据
+            if (args.Advertisement.ServiceUuids != null && args.Advertisement.ServiceUuids.Count > 0)
+            {
+                foreach (var uuid in args.Advertisement.ServiceUuids)
+                {
+                    string uuidStr = uuid.ToString();
+                    byte type;
+
+                    // 根据UUID长度确定类型
+                    if (uuidStr.Length == 36) // 128-bit UUID
+                    {
+                        type = 0x07; // Complete List of 128-bit Service Class UUIDs
+                    }
+                    else if (uuidStr.Length == 8) // 32-bit UUID
+                    {
+                        type = 0x05; // Complete List of 32-bit Service Class UUIDs
+                    }
+                    else // 16-bit UUID
+                    {
+                        type = 0x03; // Complete List of 16-bit Service Class UUIDs
+                    }
+
+                    // 计算UUID的实际字节长度
+                    int uuidByteLength;
+                    if (uuidStr.Length == 36) // 128-bit UUID (32 hex chars + 4 hyphens)
+                        uuidByteLength = 16;
+                    else if (uuidStr.Length == 8) // 32-bit UUID
+                        uuidByteLength = 4;
+                    else // 16-bit UUID
+                        uuidByteLength = 2;
+
+                    var adData = new BleAdvertisementData
+                    {
+                        Length = (byte)(uuidByteLength + 1), // UUID长度 + 类型字段(1字节)
+                        Type = type,
+                        Value = System.Text.Encoding.ASCII.GetBytes(uuidStr)
+                    };
+
+                    advertisementDataList.Add(adData);
+
+                    // 添加到原始数据字符串，包含长度字段
+                    rawData += $"{adData.Length:X2} {type:X2} {uuidStr} ";
                 }
             }
 
@@ -561,7 +636,8 @@ public class BleCharacteristicInfo {
 /// </summary>
 public class BleAdvertisementData {
     /// <summary>
-    /// 获取或设置数据长度。
+    /// 获取或设置数据长度（包括类型字段的长度）。
+    /// 在蓝牙广播数据格式中，长度字段表示类型字段和数据值的总长度。
     /// </summary>
     public byte Length { get; set; }
 
