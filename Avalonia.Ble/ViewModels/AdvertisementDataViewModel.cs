@@ -1,5 +1,7 @@
 using Avalonia.Ble.Services;
 using Avalonia.Controls;
+using Avalonia.Input; // Required for PointerPressedEventArgs
+using Avalonia.Interactivity; // Required for RoutedEventArgs
 
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -87,6 +89,35 @@ public partial class AdvertisementDataViewModel : ViewModelBase
             {
                 XTrace.WriteLine("CopyRawDataAsync: topLevel.Clipboard is null.");
             }
+            await ToastService.ShowToastAsync("无法访问剪贴板服务。");
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyValueAsync((string? Text, TopLevel? Window) data)
+    {
+        if (string.IsNullOrWhiteSpace(data.Text))
+        {
+            await ToastService.ShowToastAsync("没有可复制的内容。");
+            return;
+        }
+
+        if (data.Window?.Clipboard is { } clipboardService)
+        {
+            try
+            {
+                await clipboardService.SetTextAsync(data.Text);
+                await ToastService.ShowToastAsync("数据值已复制到剪贴板！");
+            }
+            catch (System.Exception ex)
+            {
+                XTrace.WriteException(ex);
+                await ToastService.ShowToastAsync($"复制失败: {ex.Message}");
+            }
+        }
+        else
+        {
+            XTrace.WriteLine("CopyValueAsync: Could not access ClipboardService. TopLevel or Clipboard might be null.");
             await ToastService.ShowToastAsync("无法访问剪贴板服务。");
         }
     }
