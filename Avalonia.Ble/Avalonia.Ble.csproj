@@ -6,6 +6,12 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+	  
+	<PublishAot>true</PublishAot>  <!--启用 AOT 编译-->
+    <TrimMode>full</TrimMode>      <!--设置为 full 以剪裁未使用的代码，减少包体积-->
+	<InvariantGlobalization>true</InvariantGlobalization> <!--禁用全球化依赖，避免兼容性问题-->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault> <!--禁用反射序列化-->
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator> <!--启用请求委托生成器-->
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,15 +20,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.7" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.7" />
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.7">
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.0">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+	<PackageReference Include="MessageBox.Avalonia" Version="3.2.0" />
+    <PackageReference Include="Pek.Common" Version="4.12.2025.512-beta1332" />
+    <PackageReference Include="RestSharp" Version="112.1.0" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.0" />
   </ItemGroup>
 </Project>
