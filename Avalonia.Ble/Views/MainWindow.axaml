@@ -22,8 +22,8 @@
 			<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
 		</StackPanel>
 
-		<!--<DataGrid Grid.Row="1"
-                  ItemSource="{Binding DiscoveredDevices}"
+		<DataGrid Grid.Row="1"
+                  ItemsSource="{Binding DiscoveredDevices}"
                   SelectedItem="{Binding SelectedDevice}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
@@ -47,7 +47,7 @@
 				<TextBlock Text="{Binding SelectedDevice.LastSeenTime, StringFormat='最后发现时间: {0}'}" />
 				<TextBlock Text="{Binding SelectedDevice.ServiceCount, StringFormat='服务数量: {0}'}" />
 			</StackPanel>
-		</StackPanel>-->
+		</StackPanel>
 	</Grid>
 
 </Window>

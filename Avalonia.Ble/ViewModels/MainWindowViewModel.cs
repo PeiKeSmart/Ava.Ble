@@ -1,5 +1,5 @@
 ﻿using Avalonia.Ble.Services;
-
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -18,10 +18,10 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
     private string _statusMessage = "请点击开始扫描按钮";
 
     [ObservableProperty]
-    private ObservableCollection<object> _discoveredDevices = []; // 使用 object 作为占位符
+    private ObservableCollection<BleDeviceInfo> _discoveredDevices = [];
 
     [ObservableProperty]
-    private object? _selectedDevice;
+    private BleDeviceInfo? _selectedDevice;
 
     public MainWindowViewModel()
     {
@@ -34,9 +34,7 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
     [RelayCommand]
     private void StartScan()
     {
-        IsScanning = true;
         StatusMessage = "正在扫描设备...";
-        // 在这里添加开始扫描的逻辑
         DiscoveredDevices.Clear();
         _bleService.StartScan();
         IsScanning = true;
@@ -45,9 +43,7 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
     [RelayCommand(CanExecute = nameof(CanStopScan))]
     private void StopScan()
     {
-        IsScanning = false;
         StatusMessage = "扫描已停止。";
-        // 在这里添加停止扫描的逻辑
         _bleService.StopScan();
         IsScanning = false;
     }
@@ -62,16 +58,47 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
 
     private void OnDeviceDiscovered(object? sender, BleDeviceInfo deviceInfo)
     {
+        // 使用UI线程更新集合
+        Dispatcher.UIThread.Post(() =>
+        {
+            // 检查设备是否已存在于集合中
+            BleDeviceInfo? existingDevice = null;
+            foreach (var device in DiscoveredDevices)
+            {
+                if (device.Id == deviceInfo.Id)
+                {
+                    existingDevice = device;
+                    break;
+                }
+            }
 
+            if (existingDevice != null)
+            {
+                // 更新现有设备
+                int index = DiscoveredDevices.IndexOf(existingDevice);
+                DiscoveredDevices[index] = deviceInfo;
+            }
+            else
+            {
+                // 添加新设备
+                DiscoveredDevices.Add(deviceInfo);
+            }
+        });
     }
 
     private void OnScanStatusChanged(object? sender, string status)
     {
-
+        Dispatcher.UIThread.Post(() =>
+        {
+            StatusMessage = status;
+        });
     }
 
     private void OnErrorOccurred(object? sender, string errorMessage)
     {
-
+        Dispatcher.UIThread.Post(() =>
+        {
+            StatusMessage = $"错误: {errorMessage}";
+        });
     }
 }
