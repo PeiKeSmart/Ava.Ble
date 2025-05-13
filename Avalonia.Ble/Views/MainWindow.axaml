@@ -39,15 +39,67 @@
 			</DataGrid.Columns>
 		</DataGrid>
 
-		<StackPanel Grid.Row="2" Orientation="Vertical" Spacing="5">
-			<TextBlock Text="设备详情:" FontWeight="Bold" />
-			<StackPanel IsVisible="{Binding SelectedDevice, Converter={x:Static ObjectConverters.IsNotNull}}">
-				<TextBlock Text="{Binding SelectedDevice.DisplayName}" />
-				<TextBlock Text="{Binding SelectedDevice.SignalStrength, StringFormat='信号强度: {0}'}" />
-				<TextBlock Text="{Binding SelectedDevice.LastSeenTime, StringFormat='最后发现时间: {0}'}" />
-				<TextBlock Text="{Binding SelectedDevice.ServiceCount, StringFormat='服务数量: {0}'}" />
-			</StackPanel>
-		</StackPanel>
+		<Grid Grid.Row="2" RowDefinitions="Auto,*">
+			<!-- 设备详情 -->
+			<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+				<StackPanel Grid.Column="0" Orientation="Vertical" Spacing="5">
+					<TextBlock Text="设备详情:" FontWeight="Bold" />
+					<StackPanel IsVisible="{Binding SelectedDevice, Converter={x:Static ObjectConverters.IsNotNull}}">
+						<TextBlock Text="{Binding SelectedDevice.DisplayName}" />
+						<TextBlock Text="{Binding SelectedDevice.SignalStrength, StringFormat='信号强度: {0}'}" />
+						<TextBlock Text="{Binding SelectedDevice.LastSeenTime, StringFormat='最后发现时间: {0}'}" />
+						<TextBlock Text="{Binding SelectedDevice.ServiceCount, StringFormat='服务数量: {0}'}" />
+						<TextBlock Text="{Binding SelectedDevice.ConnectionStatus, StringFormat='连接状态: {0}'}" />
+					</StackPanel>
+				</StackPanel>
+
+				<StackPanel Grid.Column="1" Orientation="Vertical" Spacing="5" IsVisible="{Binding SelectedDevice, Converter={x:Static ObjectConverters.IsNotNull}}">
+					<Button Command="{Binding ConnectCommand}"
+							IsEnabled="{Binding !SelectedDevice.IsConnected}"
+							Content="连接设备"
+							Width="100" />
+					<Button Command="{Binding DisconnectCommand}"
+							IsEnabled="{Binding SelectedDevice.IsConnected}"
+							Content="断开连接"
+							Width="100" />
+				</StackPanel>
+			</Grid>
+
+			<!-- 服务和特征 -->
+			<Grid Grid.Row="1" ColumnDefinitions="*,*" IsVisible="{Binding SelectedDevice.IsConnected}">
+				<!-- 服务列表 -->
+				<Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,5,0">
+					<TextBlock Grid.Row="0" Text="服务列表:" FontWeight="Bold" Margin="0,0,0,5" />
+					<ListBox Grid.Row="1"
+							 ItemsSource="{Binding SelectedDeviceServices}"
+							 SelectedItem="{Binding SelectedService}">
+						<ListBox.ItemTemplate>
+							<DataTemplate>
+								<TextBlock Text="{Binding DisplayName}" />
+							</DataTemplate>
+						</ListBox.ItemTemplate>
+					</ListBox>
+				</Grid>
+
+				<!-- 特征列表 -->
+				<Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="5,0,0,0">
+					<TextBlock Grid.Row="0" Text="特征列表:" FontWeight="Bold" Margin="0,0,0,5" />
+					<ListBox Grid.Row="1"
+							 ItemsSource="{Binding SelectedServiceCharacteristics}"
+							 SelectedItem="{Binding SelectedCharacteristic}">
+						<ListBox.ItemTemplate>
+							<DataTemplate>
+								<StackPanel>
+									<TextBlock Text="{Binding DisplayName}" />
+									<TextBlock Text="{Binding Properties, StringFormat='属性: {0}'}" FontSize="11" />
+									<TextBlock Text="{Binding Value, StringFormat='值: {0}'}" FontSize="11" IsVisible="{Binding Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+								</StackPanel>
+							</DataTemplate>
+						</ListBox.ItemTemplate>
+					</ListBox>
+				</Grid>
+			</Grid>
+		</Grid>
 	</Grid>
 
 </Window>
