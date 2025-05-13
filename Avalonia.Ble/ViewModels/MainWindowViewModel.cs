@@ -90,6 +90,18 @@ public partial class MainWindowViewModel : ViewModelBase
         ApplyFilter();
     }
 
+    [RelayCommand]
+    private void OpenRuleManagement()
+    {
+        var ruleManagementWindow = new RuleManagementWindow
+        {
+            DataContext = new RuleManagementViewModel()
+        };
+        // 如果需要，可以将主窗口作为所有者传递
+        // ruleManagementWindow.ShowDialog(GetMainWindow());
+        ruleManagementWindow.Show();
+    }
+
     /// <summary>
     /// 当选定设备更改时调用。
     /// </summary>
@@ -235,24 +247,15 @@ public partial class MainWindowViewModel : ViewModelBase
             string filterText = DeviceNameFilter.Trim();
             foreach (var device in sourceListForFilter)
             {
-                // 规则系统：如果设备名称包含 "HLK-LD2410"，则只显示该设备
-                if (filterText.Equals("HLK-LD2410", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (device.Name != null && device.Name.Contains("HLK-LD2410", StringComparison.OrdinalIgnoreCase))
-                    {
-                        devicesThatShouldBeInFilteredView.Add(device);
-                    }
-                }
-                else // 其他过滤规则（如果需要可以扩展）
-                {
-                    bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
-                    bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
-                                                filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
+                // TODO: 从 RuleManagementViewModel 获取并应用规则
+                // 移除旧的硬编码规则
+                bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
+                bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
+                                            filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
 
-                    if (nameMatches || isUnknownDeviceMatch)
-                    {
-                        devicesThatShouldBeInFilteredView.Add(device);
-                    }
+                if (nameMatches || isUnknownDeviceMatch)
+                {
+                    devicesThatShouldBeInFilteredView.Add(device);
                 }
             }
         }

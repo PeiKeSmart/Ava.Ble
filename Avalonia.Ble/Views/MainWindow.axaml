@@ -30,6 +30,7 @@
 				<TextBox Text="{Binding DeviceNameFilter}" Width="150" Watermark="输入设备名称..." />
 				<CheckBox Content="启用过滤" IsChecked="{Binding IsFilterEnabled}" />
 				<Button Command="{Binding ToggleFilterCommand}" Content="{Binding FilterButtonText}" />
+				<Button Content="规则管理" Command="{Binding OpenRuleManagementCommand}" />
 			</StackPanel>
 		</Grid>
 
