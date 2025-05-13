@@ -1,4 +1,6 @@
-﻿using System;
+﻿using NewLife.Log;
+
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -125,34 +127,30 @@ public class BleService {
             if (_scanCancellationTokenSource?.Token.IsCancellationRequested == true)
                 return;
 
-            string deviceSelector = $"System.Devices.Aep.BluetoothAddress:=\"{bluetoothAddress}\"";
-            var devices = await DeviceInformation.FindAllAsync(deviceSelector);
-
-            if (devices.Count > 0)
+            var device = await BluetoothLEDevice.FromBluetoothAddressAsync(bluetoothAddress);
+            if (device != null)
             {
-                var device = await BluetoothLEDevice.FromIdAsync(devices[0].Id);
-                if (device != null)
+                XTrace.WriteLine($"获取到的蓝牙：{device.Name}");
+                deviceInfo.Name = string.IsNullOrEmpty(device.Name) ? deviceInfo.Name : device.Name;
+                deviceInfo.IsConnectable = true;
+
+                // Get services if connected
+                if (device.ConnectionStatus == BluetoothConnectionStatus.Connected)
                 {
-                    deviceInfo.Name = string.IsNullOrEmpty(device.Name) ? deviceInfo.Name : device.Name;
-                    deviceInfo.IsConnectable = true;
-
-                    // Get services if connected
-                    if (device.ConnectionStatus == BluetoothConnectionStatus.Connected)
+                    var services = await device.GetGattServicesAsync();
+                    if (services.Status == Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.Success)
                     {
-                        var services = await device.GetGattServicesAsync();
-                        if (services.Status == Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.Success)
-                        {
-                            deviceInfo.ServiceCount = services.Services.Count;
-                        }
+                        deviceInfo.ServiceCount = services.Services.Count;
                     }
-
-                    device.Dispose();
                 }
+
+                device.Dispose();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Silently fail - this is just additional info
+            ErrorOccurred?.Invoke(this, $"Error in GetDeviceInfoAsync for {bluetoothAddress:X}: {ex.Message}");
+            XTrace.WriteLine($"Error in GetDeviceInfoAsync for {bluetoothAddress:X}: {ex.Message}");
         }
     }
 
@@ -161,6 +159,7 @@ public class BleService {
         if (args.Error != BluetoothError.Success)
         {
             ErrorOccurred?.Invoke(this, $"扫描意外停止: {args.Error}");
+            XTrace.WriteLine($"扫描意外停止: {args.Error}");
         }
     }
 }
