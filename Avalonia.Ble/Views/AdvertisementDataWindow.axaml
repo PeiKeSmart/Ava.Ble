@@ -66,8 +66,8 @@
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
-                    <!-- Swapped: TYPE column first -->
-                    <DataGridTextColumn Header="类型 (TYPE)" Binding="{Binding Type, StringFormat=0x\{0:X2\}}" Width="120"/>
+                    <!-- Swapped: LEN column first -->
+                    <DataGridTextColumn Header="长度 (LEN)" Binding="{Binding Length}" Width="110"/>
 
                     <!-- TypeName column with Viewbox for auto font shrinking -->
                     <DataGridTemplateColumn Header="类型名称" Width="230">
@@ -80,8 +80,8 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Swapped: LEN column third -->
-                    <DataGridTextColumn Header="长度 (LEN)" Binding="{Binding Length}" Width="100"/>
+                    <!-- Swapped: TYPE column third -->
+                    <DataGridTextColumn Header="类型 (TYPE)" Binding="{Binding Type, StringFormat=0x\{0:X2\}}" Width="120"/>
 
                     <!-- VALUE column (existing, ensure it's correct) -->
                     <DataGridTemplateColumn Header="数据值 (VALUE)" Width="*">
