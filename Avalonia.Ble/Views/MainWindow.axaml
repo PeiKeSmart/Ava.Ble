@@ -25,13 +25,16 @@
 		</StackPanel>
 
 		<DataGrid Grid.Row="1"
+                  Name="DevicesDataGrid"
                   ItemsSource="{Binding DiscoveredDevices}"
                   SelectedItem="{Binding SelectedDevice}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   GridLinesVisibility="All"
                   BorderThickness="1"
-                  Margin="0,0,0,10">
+                  Margin="0,0,0,10"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto">
 			<DataGrid.Columns>
 				<DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" MinWidth="150" />
 				<DataGridTextColumn Header="设备ID" Binding="{Binding Id}" Width="*" MinWidth="150" />

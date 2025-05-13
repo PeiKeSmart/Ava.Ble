@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -206,9 +207,8 @@ public class BleService {
             currentReceivedAdvertisementDataList = nonManufacturerDataInCurrentList;
             currentReceivedAdvertisementDataList.AddRange(uniqueManufacturerData);
             currentReceivedAdvertisementDataList = currentReceivedAdvertisementDataList
-                                                    .OrderBy(ad => GetCustomSortPriority(ad.Type))
-                                                    .ThenBy(ad => ad.Type) // Secondary sort by Type for stability within the same priority
-                                                    .ThenBy(ad => ad.ValueHex)
+                                                    .OrderBy(ad => ad.Type)
+                                                    .ThenBy(ad => ad.ValueHex) // 按类型，然后按数据内容排序
                                                     .ToList();
             // --- 新增去重和排序逻辑 结束 ---
 
@@ -250,10 +250,9 @@ public class BleService {
                 // 3. 组合新的 AdvertisementData 列表
                 var newFullAdvertisementData = mergedNonManufacturerData.Values.ToList();
                 newFullAdvertisementData.AddRange(uniqueTotalManufacturerData); // 添加累积且去重后的制造商数据
-                
+
                 existingDevice.AdvertisementData = newFullAdvertisementData
-                                                    .OrderBy(ad => GetCustomSortPriority(ad.Type))
-                                                    .ThenBy(ad => ad.Type) // Secondary sort by Type
+                                                    .OrderBy(ad => ad.Type)
                                                     .ThenBy(ad => ad.ValueHex)
                                                     .ToList();
 
@@ -272,11 +271,11 @@ public class BleService {
             // 如果是新设备，则创建新的设备信息
             // currentReceivedAdvertisementDataList 此时已经去重和排序过了
             string initialRawData = string.Empty;
-            foreach (var adData in currentReceivedAdvertisementDataList) // currentReceivedAdvertisementDataList 已按自定义优先级排序
+            foreach (var adData in currentReceivedAdvertisementDataList) // currentReceivedAdvertisementDataList 已排序
             {
                 initialRawData += $"{adData.Length:X2} {adData.Type:X2} {adData.ValueHex} ";
             }
-            
+
             var deviceInfo = new BleDeviceInfo
             {
                 Id = deviceId,
@@ -298,34 +297,6 @@ public class BleService {
         catch (Exception ex)
         {
             ErrorOccurred?.Invoke(this, $"处理设备广播时出错: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// 获取用于排序的自定义优先级。
-    /// </summary>
-    /// <param name="type">广告数据类型。</param>
-    /// <returns>排序优先级。</returns>
-    private int GetCustomSortPriority(byte type)
-    {
-        switch (type)
-        {
-            case 0x01: return 1;  // Flags
-            case 0x03: return 2;  // Complete List of 16-bit Service Class UUIDs
-            case 0x02: return 3;  // Incomplete List of 16-bit Service Class UUIDs
-            case 0x07: return 4;  // Complete List of 128-bit Service Class UUIDs
-            case 0x06: return 5;  // Incomplete List of 128-bit Service Class UUIDs
-            case 0x05: return 6;  // Complete List of 32-bit Service Class UUIDs
-            case 0x04: return 7;  // Incomplete List of 32-bit Service Class UUIDs
-            case 0xFF: return 8;  // Manufacturer Specific Data
-            case 0x09: return 9;  // Complete Local Name
-            case 0x08: return 10; // Shortened Local Name
-            case 0x0A: return 11; // TX Power Level
-            case 0x16: return 12; // Service Data - 16-bit UUID
-            case 0x20: return 13; // Service Data - 32-bit UUID
-            case 0x21: return 14; // Service Data - 128-bit UUID
-            // 可以根据需要添加更多类型及其优先级
-            default: return 100 + type; // 其他未指定类型，按原类型值排序，确保它们在已定义类型之后
         }
     }
 
@@ -552,51 +523,194 @@ public class BleService {
 /// <summary>
 /// 表示 BLE 设备的信息。
 /// </summary>
-public class BleDeviceInfo {
+public class BleDeviceInfo : INotifyPropertyChanged {
+    private string _id = string.Empty;
+    private string _name = string.Empty;
+    private ulong _address;
+    private short _rssi;
+    private DateTime _lastSeen;
+    private bool _isConnectable;
+    private int _serviceCount;
+    private bool _isConnected;
+    private List<BleServiceInfo> _services = new List<BleServiceInfo>();
+    private List<BleAdvertisementData> _advertisementData = new List<BleAdvertisementData>();
+    private string _rawAdvertisementData = string.Empty;
+
     /// <summary>
     /// 获取或设置设备 ID。
     /// </summary>
-    public string Id { get; set; } = string.Empty;
+    public string Id
+    {
+        get => _id;
+        set
+        {
+            if (_id != value)
+            {
+                _id = value;
+                OnPropertyChanged(nameof(Id));
+                OnPropertyChanged(nameof(DisplayName));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备名称。
     /// </summary>
-    public string Name { get; set; } = string.Empty;
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (_name != value)
+            {
+                _name = value;
+                OnPropertyChanged(nameof(Name));
+                OnPropertyChanged(nameof(DisplayName));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的蓝牙地址。
     /// </summary>
-    public ulong Address { get; set; }
+    public ulong Address
+    {
+        get => _address;
+        set
+        {
+            if (_address != value)
+            {
+                _address = value;
+                OnPropertyChanged(nameof(Address));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的接收信号强度指示 (RSSI)。
     /// </summary>
-    public short Rssi { get; set; }
+    public short Rssi
+    {
+        get => _rssi;
+        set
+        {
+            if (_rssi != value)
+            {
+                _rssi = value;
+                OnPropertyChanged(nameof(Rssi));
+                OnPropertyChanged(nameof(SignalStrength));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置上次看到设备的时间。
     /// </summary>
-    public DateTime LastSeen { get; set; }
+    public DateTime LastSeen
+    {
+        get => _lastSeen;
+        set
+        {
+            if (_lastSeen != value)
+            {
+                _lastSeen = value;
+                OnPropertyChanged(nameof(LastSeen));
+                OnPropertyChanged(nameof(LastSeenTime));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置一个值，该值指示设备是否可连接。
     /// </summary>
-    public bool IsConnectable { get; set; }
+    public bool IsConnectable
+    {
+        get => _isConnectable;
+        set
+        {
+            if (_isConnectable != value)
+            {
+                _isConnectable = value;
+                OnPropertyChanged(nameof(IsConnectable));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的服务数量。
     /// </summary>
-    public int ServiceCount { get; set; }
+    public int ServiceCount
+    {
+        get => _serviceCount;
+        set
+        {
+            if (_serviceCount != value)
+            {
+                _serviceCount = value;
+                OnPropertyChanged(nameof(ServiceCount));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置一个值，该值指示设备当前是否已连接。
     /// </summary>
-    public bool IsConnected { get; set; }
+    public bool IsConnected
+    {
+        get => _isConnected;
+        set
+        {
+            if (_isConnected != value)
+            {
+                _isConnected = value;
+                OnPropertyChanged(nameof(IsConnected));
+                OnPropertyChanged(nameof(ConnectionStatus));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的服务列表。
     /// </summary>
-    public List<BleServiceInfo> Services { get; set; } = new List<BleServiceInfo>();
+    public List<BleServiceInfo> Services
+    {
+        get => _services;
+        set
+        {
+            _services = value;
+            OnPropertyChanged(nameof(Services));
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的广播数据。
     /// </summary>
-    public List<BleAdvertisementData> AdvertisementData { get; set; } = new List<BleAdvertisementData>();
+    public List<BleAdvertisementData> AdvertisementData
+    {
+        get => _advertisementData;
+        set
+        {
+            _advertisementData = value;
+            OnPropertyChanged(nameof(AdvertisementData));
+        }
+    }
+
     /// <summary>
     /// 获取或设置设备的原始广播数据。
     /// </summary>
-    public string RawAdvertisementData { get; set; } = string.Empty;
+    public string RawAdvertisementData
+    {
+        get => _rawAdvertisementData;
+        set
+        {
+            if (_rawAdvertisementData != value)
+            {
+                _rawAdvertisementData = value;
+                OnPropertyChanged(nameof(RawAdvertisementData));
+            }
+        }
+    }
+
     /// <summary>
     /// 获取设备的连接状态。
     /// </summary>
@@ -606,14 +720,30 @@ public class BleDeviceInfo {
     /// 获取设备的显示名称。
     /// </summary>
     public string DisplayName => string.IsNullOrEmpty(Name) ? Id : $"{Name} ({Id})";
+
     /// <summary>
     /// 获取设备的信号强度。
     /// </summary>
     public string SignalStrength => $"{Rssi} dBm";
+
     /// <summary>
     /// 获取上次看到设备的时间。
     /// </summary>
     public string LastSeenTime => LastSeen.ToString("HH:mm:ss");
+
+    /// <summary>
+    /// 在属性值更改时发生。
+    /// </summary>
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>
+    /// 引发 PropertyChanged 事件。
+    /// </summary>
+    /// <param name="propertyName">已更改的属性的名称。</param>
+    protected virtual void OnPropertyChanged(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
 
 /// <summary>

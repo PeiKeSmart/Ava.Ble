@@ -178,34 +178,38 @@ public partial class MainWindowViewModel : ViewModelBase
                 // 检查是否是当前选中的设备
                 bool isSelectedDevice = (currentSelectedDevice != null && existingDevice.Id == currentSelectedDevice.Id);
 
-                // 创建更新后的设备对象
-                deviceInfo.IsConnected = isConnected;
-                if (isConnected)
-                {
-                    deviceInfo.Services = services;
-                }
-
-                // 如果是选中的设备，需要保持选中状态
+                // 如果是选中的设备，直接更新其属性而不是替换整个对象
                 if (isSelectedDevice)
                 {
-                    // 先保存当前选中的设备
-                    var tempSelected = SelectedDevice;
+                    // 更新现有对象的属性
+                    existingDevice.Rssi = deviceInfo.Rssi;
+                    existingDevice.LastSeen = deviceInfo.LastSeen;
+                    existingDevice.AdvertisementData = deviceInfo.AdvertisementData;
+                    existingDevice.RawAdvertisementData = deviceInfo.RawAdvertisementData;
+                    existingDevice.IsConnectable = deviceInfo.IsConnectable;
 
-                    // 更新设备
-                    DiscoveredDevices[existingIndex] = deviceInfo;
-
-                    // 恢复选中状态
-                    SelectedDevice = deviceInfo;
+                    // 如果名称为空或未知，则更新名称
+                    if (string.IsNullOrEmpty(existingDevice.Name) || existingDevice.Name == "未知设备")
+                    {
+                        existingDevice.Name = deviceInfo.Name;
+                    }
                 }
                 else
                 {
+                    // 创建更新后的设备对象
+                    deviceInfo.IsConnected = isConnected;
+                    if (isConnected)
+                    {
+                        deviceInfo.Services = services;
+                    }
+
                     // 如果不是选中的设备，直接更新
                     DiscoveredDevices[existingIndex] = deviceInfo;
                 }
             }
             else
             {
-                // 添加新设备
+                // 添加新设备，但不自动选中它
                 DiscoveredDevices.Add(deviceInfo);
             }
         });
