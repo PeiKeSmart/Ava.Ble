@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Avalonia.Ble.ViewModels;
@@ -216,211 +217,160 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private void ApplyFilter()
     {
-        // 创建一个临时列表，避免直接修改原集合
-        List<BleDeviceInfo> tempList;
+        string? selectedDeviceId = SelectedDevice?.Id; // 保留选择
 
-        // 在临时列表中应用过滤
-        lock (_discoveredDevices)
+        List<BleDeviceInfo> sourceListForFilter;
+        lock (_discoveredDevices) // 安全地迭代 _discoveredDevices
         {
-            if (!IsFilterEnabled || string.IsNullOrWhiteSpace(DeviceNameFilter))
+            sourceListForFilter = new List<BleDeviceInfo>(_discoveredDevices); // 使用快照进行操作
+        }
+
+        List<BleDeviceInfo> devicesThatShouldBeInFilteredView = new List<BleDeviceInfo>();
+        if (!IsFilterEnabled || string.IsNullOrWhiteSpace(DeviceNameFilter))
+        {
+            devicesThatShouldBeInFilteredView.AddRange(sourceListForFilter);
+        }
+        else
+        {
+            string filterText = DeviceNameFilter.Trim();
+            foreach (var device in sourceListForFilter)
             {
-                // 如果未启用过滤或过滤文本为空，显示所有设备
-                tempList = new List<BleDeviceInfo>(_discoveredDevices);
-            }
-            else
-            {
-                // 应用过滤
-                tempList = new List<BleDeviceInfo>();
-                foreach (var device in _discoveredDevices)
+                bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
+                // 如果设备名称为空或“未知设备”，并且过滤器文本为“未知设备”，则匹配
+                bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
+                                            filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
+                
+                if (nameMatches || isUnknownDeviceMatch)
                 {
-                    if (device.Name.Contains(DeviceNameFilter, StringComparison.OrdinalIgnoreCase))
-                    {
-                        tempList.Add(device);
-                    }
+                    devicesThatShouldBeInFilteredView.Add(device);
                 }
             }
         }
 
-        // 在UI线程上更新FilteredDevices集合
-        Dispatcher.UIThread.Post(() =>
+        // 将 FilteredDevices 与 devicesThatShouldBeInFilteredView 同步
+        // 这假设 devicesThatShouldBeInFilteredView 包含所需的顺序。
+
+        // 1. 从 FilteredDevices 中移除不再存在于 devicesThatShouldBeInFilteredView 中的项
+        var itemsToRemove = FilteredDevices.Except(devicesThatShouldBeInFilteredView).ToList();
+        foreach (var itemToRemove in itemsToRemove)
         {
-            // 保存当前选中的设备
-            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
-            string? selectedDeviceId = currentSelectedDevice?.Id;
+            FilteredDevices.Remove(itemToRemove);
+        }
 
-            // 获取DataGrid的ScrollViewer
-            if (App.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        // 2. 添加/移动项以匹配 devicesThatShouldBeInFilteredView 的顺序和内容
+        for (int i = 0; i < devicesThatShouldBeInFilteredView.Count; i++)
+        {
+            var itemFromSource = devicesThatShouldBeInFilteredView[i];
+            if (i >= FilteredDevices.Count)
             {
-                if (desktop.MainWindow is Views.MainWindow mainWindow)
-                {
-                    // 保存滚动位置
-                    var dataGrid = mainWindow.FindControl<Avalonia.Controls.DataGrid>("DevicesDataGrid");
-                    if (dataGrid != null)
-                    {
-                        var scrollViewer = dataGrid.FindDescendantOfType<Avalonia.Controls.ScrollViewer>();
-                        if (scrollViewer != null)
-                        {
-                            SaveScrollPosition(scrollViewer);
-                        }
-                    }
-                }
+                // 需要在末尾添加项
+                FilteredDevices.Add(itemFromSource);
             }
-
-            // 创建一个新的ObservableCollection，而不是修改现有的集合
-            var newFilteredDevices = new ObservableCollection<BleDeviceInfo>();
-            foreach (var device in tempList)
+            else if (!ReferenceEquals(FilteredDevices[i], itemFromSource))
             {
-                newFilteredDevices.Add(device);
-            }
-
-            // 替换整个集合，而不是修改现有集合
-            FilteredDevices = newFilteredDevices;
-
-            // 如果之前有选中的设备，尝试在新列表中找到它并重新选中
-            if (selectedDeviceId != null)
-            {
-                foreach (var device in FilteredDevices)
-                {
-                    if (device.Id == selectedDeviceId)
-                    {
-                        SelectedDevice = device;
+                // 此位置的项不同。检查 itemFromSource 是否已存在于 FilteredDevices 中的其他位置。
+                int existingIndexOfItemFromSource = -1;
+                for(int j = 0; j < FilteredDevices.Count; ++j) {
+                    if(ReferenceEquals(FilteredDevices[j], itemFromSource)) {
+                        existingIndexOfItemFromSource = j;
                         break;
                     }
                 }
-            }
 
-            // 恢复滚动位置
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (App.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                if (existingIndexOfItemFromSource != -1)
                 {
-                    if (desktop.MainWindow is Views.MainWindow mainWindow)
-                    {
-                        var dataGrid = mainWindow.FindControl<Avalonia.Controls.DataGrid>("DevicesDataGrid");
-                        if (dataGrid != null)
-                        {
-                            var scrollViewer = dataGrid.FindDescendantOfType<Avalonia.Controls.ScrollViewer>();
-                            if (scrollViewer != null)
-                            {
-                                RestoreScrollPosition(scrollViewer);
-                            }
-                        }
-                    }
+                    // 项存在于 FilteredDevices 中的其他位置，将其移动到正确位置
+                    FilteredDevices.Move(existingIndexOfItemFromSource, i);
                 }
-            }, DispatcherPriority.Render);
-        });
+                else
+                {
+                    // 项根本不在 FilteredDevices 中，插入它
+                    FilteredDevices.Insert(i, itemFromSource);
+                }
+            }
+            // 如果 FilteredDevices[i] 已经是 itemFromSource，则它位于正确的位置。
+        }
+
+        // 3. 如果在插入/移动后 FilteredDevices 比 devicesThatShouldBeInFilteredView 长，则修剪多余的项。
+        while (FilteredDevices.Count > devicesThatShouldBeInFilteredView.Count)
+        {
+            FilteredDevices.RemoveAt(FilteredDevices.Count - 1);
+        }
+
+        // 如果可能，恢复选择
+        if (selectedDeviceId != null)
+        {
+            SelectedDevice = FilteredDevices.FirstOrDefault(d => d.Id == selectedDeviceId);
+        }
+        else
+        {
+            SelectedDevice = null; // 或者根据需要选择第一项
+        }
+        // 不再需要恢复滚动位置的注释，因为正确的集合管理应该能解决此问题。
     }
 
     /// <summary>
     /// 处理 DeviceDiscovered 事件。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
-    /// <param name="deviceInfo">发现的设备信息。</param>
-    private void OnDeviceDiscovered(object? sender, BleDeviceInfo deviceInfo)
+    /// <param name="deviceInfoFromEvent">发现的设备信息。</param>
+    private void OnDeviceDiscovered(object? sender, BleDeviceInfo deviceInfoFromEvent)
     {
-        // 创建设备信息的副本，避免在多线程环境中修改原始对象
-        var deviceInfoCopy = new BleDeviceInfo
-        {
-            Id = deviceInfo.Id,
-            Name = deviceInfo.Name,
-            Address = deviceInfo.Address,
-            Rssi = deviceInfo.Rssi,
-            LastSeen = deviceInfo.LastSeen,
-            IsConnectable = deviceInfo.IsConnectable,
-            ServiceCount = deviceInfo.ServiceCount,
-            IsConnected = deviceInfo.IsConnected
-        };
-
-        // 复制广播数据
-        foreach (var adData in deviceInfo.AdvertisementData)
-        {
-            deviceInfoCopy.AdvertisementData.Add(adData);
-        }
-
-        deviceInfoCopy.RawAdvertisementData = deviceInfo.RawAdvertisementData;
-
-        // 使用UI线程更新集合
         Dispatcher.UIThread.Post(() =>
         {
-            // 保存当前选中的设备
-            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
-            string? selectedDeviceId = currentSelectedDevice?.Id;
-
-            // 创建一个新的设备列表，避免直接修改原集合
-            List<BleDeviceInfo> updatedDevices;
-
-            lock (_discoveredDevices)
+            BleDeviceInfo? existingDeviceInMasterList;
+            lock (_discoveredDevices) // _discoveredDevices is ObservableCollection<BleDeviceInfo>
             {
-                // 复制当前设备列表
-                updatedDevices = new List<BleDeviceInfo>(_discoveredDevices);
+                existingDeviceInMasterList = _discoveredDevices.FirstOrDefault(d => d.Id == deviceInfoFromEvent.Id);
 
-                // 检查设备是否已存在于集合中
-                BleDeviceInfo? existingDevice = null;
-                int existingIndex = -1;
-
-                for (int i = 0; i < updatedDevices.Count; i++)
+                if (existingDeviceInMasterList != null)
                 {
-                    if (updatedDevices[i].Id == deviceInfoCopy.Id)
+                    // 更新现有实例的属性
+                    // Name update logic: Update if current name is poor and new one is potentially better.
+                    if (string.IsNullOrEmpty(existingDeviceInMasterList.Name) || existingDeviceInMasterList.Name == "未知设备")
                     {
-                        existingDevice = updatedDevices[i];
-                        existingIndex = i;
-                        break;
+                        existingDeviceInMasterList.Name = deviceInfoFromEvent.Name;
                     }
-                }
-
-                if (existingDevice != null)
-                {
-                    // 保存当前设备的连接状态和服务信息
-                    bool isConnected = existingDevice.IsConnected;
-                    var services = existingDevice.Services;
-
-                    // 检查是否是当前选中的设备
-                    bool isSelectedDevice = (selectedDeviceId != null && existingDevice.Id == selectedDeviceId);
-
-                    // 如果是选中的设备，直接更新其属性而不是替换整个对象
-                    if (isSelectedDevice)
+                    else if (!string.IsNullOrEmpty(deviceInfoFromEvent.Name) && deviceInfoFromEvent.Name != "未知设备")
                     {
-                        // 更新现有对象的属性
-                        existingDevice.Rssi = deviceInfoCopy.Rssi;
-                        existingDevice.LastSeen = deviceInfoCopy.LastSeen;
-                        existingDevice.AdvertisementData = deviceInfoCopy.AdvertisementData;
-                        existingDevice.RawAdvertisementData = deviceInfoCopy.RawAdvertisementData;
-                        existingDevice.IsConnectable = deviceInfoCopy.IsConnectable;
-
-                        // 如果名称为空或未知，则更新名称
-                        if (string.IsNullOrEmpty(existingDevice.Name) || existingDevice.Name == "未知设备")
-                        {
-                            existingDevice.Name = deviceInfoCopy.Name;
-                        }
+                        // If current name is valid, only update if new name is also valid (not "未知设备")
+                        existingDeviceInMasterList.Name = deviceInfoFromEvent.Name;
                     }
-                    else
-                    {
-                        // 创建更新后的设备对象
-                        deviceInfoCopy.IsConnected = isConnected;
-                        if (isConnected)
-                        {
-                            deviceInfoCopy.Services = services;
-                        }
+                    // else, retain current name if it's good and new one is "未知设备" or empty.
 
-                        // 如果不是选中的设备，直接更新
-                        updatedDevices[existingIndex] = deviceInfoCopy;
-                    }
+                    existingDeviceInMasterList.Rssi = deviceInfoFromEvent.Rssi;
+                    existingDeviceInMasterList.LastSeen = deviceInfoFromEvent.LastSeen;
+                    existingDeviceInMasterList.IsConnectable = deviceInfoFromEvent.IsConnectable;
+                    
+                    // BleService should provide consolidated AdvertisementData.
+                    // BleDeviceInfo.AdvertisementData setter calls OnPropertyChanged.
+                    existingDeviceInMasterList.AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData);
+                    existingDeviceInMasterList.RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData;
+                    // ServiceCount and IsConnected are typically updated upon connection.
                 }
                 else
                 {
-                    // 添加新设备，但不自动选中它
-                    updatedDevices.Add(deviceInfoCopy);
-                }
-
-                // 用新列表替换原列表
-                _discoveredDevices.Clear();
-                foreach (var device in updatedDevices)
-                {
-                    _discoveredDevices.Add(device);
+                    // 设备未找到，添加新的 BleDeviceInfo 实例。
+                    // 从 deviceInfoFromEvent 创建副本，因为它可能被发送者重用。
+                    var newDeviceToAdd = new BleDeviceInfo
+                    {
+                        Id = deviceInfoFromEvent.Id,
+                        Name = deviceInfoFromEvent.Name,
+                        Address = deviceInfoFromEvent.Address,
+                        Rssi = deviceInfoFromEvent.Rssi,
+                        LastSeen = deviceInfoFromEvent.LastSeen,
+                        IsConnectable = deviceInfoFromEvent.IsConnectable,
+                        ServiceCount = deviceInfoFromEvent.ServiceCount,
+                        IsConnected = deviceInfoFromEvent.IsConnected,
+                        AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData),
+                        RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData
+                        // Services 列表初始为空
+                    };
+                    _discoveredDevices.Add(newDeviceToAdd);
                 }
             }
-
-            // 应用过滤
+            // _discoveredDevices 已就地更新（添加了项或更改了现有项的属性）。
+            // ApplyFilter 将使用这些稳定的实例。
             ApplyFilter();
         });
     }
