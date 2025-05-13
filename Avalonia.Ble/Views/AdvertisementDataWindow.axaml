@@ -85,5 +85,15 @@
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>
+
+        <!-- Toast 提示 -->
+        <Border Grid.Row="0" Grid.RowSpan="3" 
+                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Background="#333333" CornerRadius="5" Padding="10,5"
+                Margin="0,0,0,20"
+                IsVisible="{Binding IsToastVisible}"
+                ZIndex="100">
+            <TextBlock Text="{Binding ToastMessage}" Foreground="White"/>
+        </Border>
     </Grid>
 </Window>
