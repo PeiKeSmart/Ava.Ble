@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap mp rescap">
+
+	<Identity	  Name="Avalonia.Ble" 	Publisher="CN=Pek" 	Version="1.0.0.0" />
+
+	<Properties>
+		<DisplayName>Avalonia.Ble</DisplayName>
+		<PublisherDisplayName>YourPublisherName</PublisherDisplayName>
+		<Logo>Assets\StoreLogo.png</Logo>
+		<!-- 你可能需要创建这些图片或修改路径 -->
+	</Properties>
+
+	<Dependencies>
+		<!-- 确保 MinVersion 和 MaxVersionTested 与你的项目目标框架匹配或兼容 -->
+		<TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+	</Dependencies>
+
+	<Resources>
+		<Resource Language="x-generate"/>
+	</Resources>
+
+	<Applications>
+		<Application Id="App"
+		  Executable="$targetnametoken$.exe"
+		  EntryPoint="$targetentrypoint$">
+			<uap:VisualElements
+			  DisplayName="Avalonia.Ble"
+			  Square150x150Logo="Assets\Square150x150Logo.png"
+			  Square44x44Logo="Assets\Square44x44Logo.png"
+			  Description="Avalonia BLE Application"
+			  BackgroundColor="transparent">
+				<uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"/>
+				<uap:SplashScreen Image="Assets\SplashScreen.png" />
+			</uap:VisualElements>
+		</Application>
+	</Applications>
+
+	<Capabilities>
+		<Capability Name="internetClient" />
+		<DeviceCapability Name="bluetooth" />
+		<!-- 如果你需要非配对的蓝牙扫描或与某些特定类型的蓝牙设备通信，
+         可能还需要 "radios" (通常不直接需要，但 bluetooth 会依赖它)
+         或者 "bluetooth.genericAttributeProfile" (通常由 "bluetooth" 隐式包含)
+    -->
+		<!-- <rescap:Capability Name="runFullTrust" /> -->
+		<!-- 如果是桌面桥应用，可能需要 -->
+	</Capabilities>
+</Package>
