@@ -142,6 +142,8 @@ public class BleService {
                 deviceName = "未知设备";
             }
 
+            XTrace.WriteLine($"获取设备：{deviceName}");
+
             // 用于存储当前接收到的所有解析后的广播数据段
             List<BleAdvertisementData> currentReceivedAdvertisementDataList = new List<BleAdvertisementData>();
 
