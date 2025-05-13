@@ -14,8 +14,15 @@
         <vm:RuleManagementViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="*,Auto" Margin="10">
-        <ae:TextEditor Grid.Row="0"
+    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,5">
+            <TextBlock Text="选择语言:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="SyntaxModeCombo"
+                      MinWidth="150"
+                      VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <ae:TextEditor Grid.Row="1"
                        x:Name="RuleTextEditor"
                        Document="{Binding RuleDocument}"
                        FontFamily="Cascadia Mono, Consolas, monospace"
@@ -24,7 +31,7 @@
                        Margin="0,0,0,10"/>
                        <!-- TODO: 后续可以考虑为规则创建自定义的语法高亮 -->
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
             <Button Content="加载规则" Command="{Binding LoadRulesCommand}"/>
             <Button Content="保存规则" Command="{Binding SaveRulesCommand}"/>
         </StackPanel>

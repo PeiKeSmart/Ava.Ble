@@ -5,12 +5,14 @@ using TextMateSharp.Grammars;
 using System; // Added for EventArgs
 using Avalonia.Media; // Added for IBrush, Color, SolidColorBrush, Pen
 using System.Diagnostics; // Added for Debug.WriteLine
+using System.Linq; // Added for LINQ
 
 namespace Avalonia.Ble.Views
 {
     public partial class RuleManagementWindow : Window
     {
         private TextEditor _textEditor;
+        private ComboBox _syntaxModeCombo; // Added ComboBox field
         private RegistryOptions _registryOptions;
         private TextMate.Installation _textMateInstallation;
 
@@ -21,16 +23,20 @@ namespace Avalonia.Ble.Views
             // this.AttachDevTools(); 
 #endif
             _textEditor = this.FindControl<TextEditor>("RuleTextEditor");
+            _syntaxModeCombo = this.FindControl<ComboBox>("SyntaxModeCombo"); // Get ComboBox instance
 
-            if (_textEditor != null)
+            if (_textEditor != null && _syntaxModeCombo != null)
             {
                 _registryOptions = new RegistryOptions(ThemeName.DarkPlus);
                 _textMateInstallation = _textEditor.InstallTextMate(_registryOptions);
-                _textMateInstallation.AppliedTheme += TextMateInstallationOnAppliedTheme; // Hook up the event
+                _textMateInstallation.AppliedTheme += TextMateInstallationOnAppliedTheme;
+
+                var allLanguages = _registryOptions.GetAvailableLanguages();
+                _syntaxModeCombo.ItemsSource = allLanguages;
+                _syntaxModeCombo.DisplayMemberBinding = new Avalonia.Data.Binding("Id"); // Show language Id in ComboBox
 
                 // --- Debug: List all available languages and their extensions ---
                 Debug.WriteLine("[TextMate] Listing all available languages from RegistryOptions:");
-                var allLanguages = _registryOptions.GetAvailableLanguages();
                 if (allLanguages != null)
                 {
                     foreach (var lang in allLanguages)
@@ -46,33 +52,46 @@ namespace Avalonia.Ble.Views
                 Debug.WriteLine("[TextMate] --- End of language listing ---");
                 // --- End Debug ---
 
-                // Attempt to load C# grammar
-                var csharpLanguage = _registryOptions.GetLanguageByExtension(".cs"); // Changed from .json to .cs
+                // Set initial language (e.g., C#)
+                var csharpLanguage = allLanguages?.FirstOrDefault(lang => lang.Id == "csharp" || (lang.Extensions != null && lang.Extensions.Contains(".cs")));
                 if (csharpLanguage != null)
                 {
-                    Debug.WriteLine($"[TextMate] Found language ID for C#: {csharpLanguage.Id}"); 
-                    string scopeName = _registryOptions.GetScopeByLanguageId(csharpLanguage.Id);
-                    Debug.WriteLine($"[TextMate] Scope name for C#: {scopeName}"); 
-                    if (!string.IsNullOrEmpty(scopeName))
+                    _syntaxModeCombo.SelectedItem = csharpLanguage;
+                    // Load initial grammar based on selection (or can be done in SelectionChanged handler)
+                    string initialScopeName = _registryOptions.GetScopeByLanguageId(csharpLanguage.Id);
+                    if (!string.IsNullOrEmpty(initialScopeName))
                     {
-                        _textMateInstallation.SetGrammar(scopeName);
-                        Debug.WriteLine($"[TextMate] Set grammar to C#: {scopeName}");
-                    }
-                    else
-                    {
-                        Debug.WriteLine("[TextMate] Error: Scope name for C# is null or empty.");
+                        _textMateInstallation.SetGrammar(initialScopeName);
+                        Debug.WriteLine($"[TextMate] Initial grammar set to C#: {initialScopeName}");
                     }
                 }
                 else
                 {
-                    Debug.WriteLine("[TextMate] C# language not found for TextMate highlighting. Ensure TextMateSharp.Grammars is correctly referenced and includes C#.");
+                    // Fallback if C# is not found, or select the first available language
+                    if (allLanguages != null && allLanguages.Any())
+                    {
+                        _syntaxModeCombo.SelectedIndex = 0;
+                        var firstLang = allLanguages.First();
+                        string firstScopeName = _registryOptions.GetScopeByLanguageId(firstLang.Id);
+                         if (!string.IsNullOrEmpty(firstScopeName))
+                        {
+                            _textMateInstallation.SetGrammar(firstScopeName);
+                            Debug.WriteLine($"[TextMate] Initial grammar set to first available: {firstScopeName}");
+                        }
+                    }
+                    else
+                    {
+                         Debug.WriteLine("[TextMate] C# language not found and no other languages available to set as initial.");
+                    }
                 }
-                // Apply the theme colors initially
+
+                _syntaxModeCombo.SelectionChanged += SyntaxModeCombo_SelectionChanged; // Subscribe to event
+
                 TextMateInstallationOnAppliedTheme(null, _textMateInstallation);
             }
             else
             {
-                Debug.WriteLine("RuleTextEditor not found.");
+                Debug.WriteLine("RuleTextEditor or SyntaxModeCombo not found.");
             }
         }
 
@@ -134,7 +153,34 @@ namespace Avalonia.Ble.Views
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
-            _textMateInstallation?.Dispose(); // Dispose of TextMate installation
+            if (_syntaxModeCombo != null)
+            {
+                _syntaxModeCombo.SelectionChanged -= SyntaxModeCombo_SelectionChanged; // Unsubscribe
+            }
+            _textMateInstallation?.Dispose();
+        }
+
+        private void SyntaxModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_textMateInstallation == null || _registryOptions == null || e.AddedItems.Count == 0)
+                return;
+
+            if (e.AddedItems[0] is Language selectedLanguage)
+            {
+                string scopeName = _registryOptions.GetScopeByLanguageId(selectedLanguage.Id);
+                if (!string.IsNullOrEmpty(scopeName))
+                {
+                    _textMateInstallation.SetGrammar(scopeName);
+                    Debug.WriteLine($"[TextMate] Grammar changed to: {selectedLanguage.Id} ({scopeName})");
+                    // Optionally, you might want to clear and reload the document or provide sample text
+                    // _textEditor.Document.Text = $"// Switched to {selectedLanguage.Id}"; 
+                }
+                else
+                {
+                    Debug.WriteLine($"[TextMate] Error: Scope name for {selectedLanguage.Id} is null or empty.");
+                    _textMateInstallation.SetGrammar(null); // Clear grammar if scope is not found
+                }
+            }
         }
     }
 }
