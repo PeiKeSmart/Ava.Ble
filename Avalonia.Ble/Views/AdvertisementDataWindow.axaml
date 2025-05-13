@@ -16,9 +16,7 @@
     </Design.DataContext>
 
     <Window.Styles>
-        <Style Selector="DataGrid">
-            <Setter Property="RowHeight" Value="60"/>
-        </Style>
+        <!-- Removed fixed RowHeight for DataGrid to allow auto-sizing -->
     </Window.Styles>
 
     <Grid RowDefinitions="Auto,Auto,*" Margin="10">
@@ -68,10 +66,25 @@
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <DataGrid.Columns>
+                    <!-- Swapped: TYPE column first -->
                     <DataGridTextColumn Header="类型 (TYPE)" Binding="{Binding Type, StringFormat=0x\{0:X2\}}" Width="120"/>
-                    <DataGridTextColumn Header="类型名称" Binding="{Binding TypeName}" Width="230"/>
+
+                    <!-- TypeName column with Viewbox for auto font shrinking -->
+                    <DataGridTemplateColumn Header="类型名称" Width="230">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" VerticalAlignment="Center" Margin="5">
+                                    <TextBlock Text="{Binding TypeName}" TextWrapping="NoWrap" />
+                                </Viewbox>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Swapped: LEN column third -->
                     <DataGridTextColumn Header="长度 (LEN)" Binding="{Binding Length}" Width="100"/>
-                    <DataGridTemplateColumn Header="数据值 (VALUE)" Width="400">
+
+                    <!-- VALUE column (existing, ensure it's correct) -->
+                    <DataGridTemplateColumn Header="数据值 (VALUE)" Width="*">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding ValueHex}"
