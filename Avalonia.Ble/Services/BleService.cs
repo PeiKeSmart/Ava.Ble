@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -140,11 +141,10 @@ public class BleService {
                 deviceName = "未知设备";
             }
 
-            // 处理广播数据
-            List<BleAdvertisementData> advertisementDataList = new List<BleAdvertisementData>();
-            string rawData = string.Empty;
+            // 用于存储当前接收到的所有解析后的广播数据段
+            List<BleAdvertisementData> currentReceivedAdvertisementDataList = new List<BleAdvertisementData>();
 
-            // 获取原始广播数据
+            // 1. 处理原始广播数据 (DataSections)
             if (args.Advertisement.DataSections != null && args.Advertisement.DataSections.Count > 0)
             {
                 foreach (var section in args.Advertisement.DataSections)
@@ -153,103 +153,130 @@ public class BleService {
                     byte[] data = new byte[section.Data.Length];
                     reader.ReadBytes(data);
 
-                    var adData = new BleAdvertisementData
+                    currentReceivedAdvertisementDataList.Add(new BleAdvertisementData
                     {
                         Length = (byte)(data.Length + 1), // 数据长度 + 类型字段(1字节)
                         Type = section.DataType,
                         Value = data
-                    };
-
-                    advertisementDataList.Add(adData);
-
-                    // 添加到原始数据字符串，包含长度字段
-                    rawData += $"{adData.Length:X2} {adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
+                    });
                 }
             }
 
-            // 获取制造商特定数据
+            // 2. 处理制造商特定数据 (ManufacturerData)
+            // 将CompanyID和数据合并到Value中，Length为(Value.Length + 1)
             if (args.Advertisement.ManufacturerData != null && args.Advertisement.ManufacturerData.Count > 0)
             {
                 foreach (var manufacturerData in args.Advertisement.ManufacturerData)
                 {
-                    var reader = Windows.Storage.Streams.DataReader.FromBuffer(manufacturerData.Data);
-                    byte[] data = new byte[manufacturerData.Data.Length];
-                    reader.ReadBytes(data);
+                    var actualDataBytes = new byte[manufacturerData.Data.Length];
+                    Windows.Storage.Streams.DataReader.FromBuffer(manufacturerData.Data).ReadBytes(actualDataBytes);
 
-                    var adData = new BleAdvertisementData
+                    byte[] companyIdBytes = BitConverter.GetBytes(manufacturerData.CompanyId); // 通常是 ushort (2 bytes)
+                    // BLE Company ID 应该是小端序 (Little Endian)
+                    // BitConverter.GetBytes 在小端系统上产生小端字节数组。
+
+                    byte[] combinedValue = new byte[2 + actualDataBytes.Length];
+                    Buffer.BlockCopy(companyIdBytes, 0, combinedValue, 0, 2);
+                    Buffer.BlockCopy(actualDataBytes, 0, combinedValue, 2, actualDataBytes.Length);
+
+                    currentReceivedAdvertisementDataList.Add(new BleAdvertisementData
                     {
-                        Length = (byte)(data.Length + 3), // 数据长度 + 类型字段(1字节) + 公司ID(2字节)
+                        Length = (byte)(combinedValue.Length + 1), // (CompanyID + Data).Length + Type_Field_Length
                         Type = 0xFF, // Manufacturer Specific Data
-                        Value = data
-                    };
-
-                    advertisementDataList.Add(adData);
-
-                    // 添加到原始数据字符串，包含长度字段
-                    rawData += $"{adData.Length:X2} FF {manufacturerData.CompanyId:X4} {BitConverter.ToString(data).Replace("-", " ")} ";
+                        Value = combinedValue
+                    });
                 }
             }
 
-            // 获取服务UUID数据
-            if (args.Advertisement.ServiceUuids != null && args.Advertisement.ServiceUuids.Count > 0)
-            {
-                foreach (var uuid in args.Advertisement.ServiceUuids)
-                {
-                    string uuidStr = uuid.ToString();
-                    byte type;
+            // 3. 服务UUID数据不再单独处理，它们应该包含在DataSections中对应的类型里。
 
-                    // 根据UUID长度确定类型
-                    if (uuidStr.Length == 36) // 128-bit UUID
-                    {
-                        type = 0x07; // Complete List of 128-bit Service Class UUIDs
-                    }
-                    else if (uuidStr.Length == 8) // 32-bit UUID
-                    {
-                        type = 0x05; // Complete List of 32-bit Service Class UUIDs
-                    }
-                    else // 16-bit UUID
-                    {
-                        type = 0x03; // Complete List of 16-bit Service Class UUIDs
-                    }
+            // --- 新增去重和排序逻辑 开始 ---
+            var manufacturerDataInCurrentList = currentReceivedAdvertisementDataList
+                .Where(ad => ad.Type == 0xFF)
+                .ToList();
+            var nonManufacturerDataInCurrentList = currentReceivedAdvertisementDataList
+                .Where(ad => ad.Type != 0xFF)
+                .ToList();
 
-                    // 计算UUID的实际字节长度
-                    int uuidByteLength;
-                    if (uuidStr.Length == 36) // 128-bit UUID (32 hex chars + 4 hyphens)
-                        uuidByteLength = 16;
-                    else if (uuidStr.Length == 8) // 32-bit UUID
-                        uuidByteLength = 4;
-                    else // 16-bit UUID
-                        uuidByteLength = 2;
+            var uniqueManufacturerData = manufacturerDataInCurrentList
+                .GroupBy(ad => ad.ValueHex) // 使用 ValueHex (已包含 CompanyID 和 Data) 作为分组依据
+                .Select(g => g.First())    // 每个组取第一个，实现去重
+                .ToList();
 
-                    var adData = new BleAdvertisementData
-                    {
-                        Length = (byte)(uuidByteLength + 1), // UUID长度 + 类型字段(1字节)
-                        Type = type,
-                        Value = System.Text.Encoding.ASCII.GetBytes(uuidStr)
-                    };
+            currentReceivedAdvertisementDataList = nonManufacturerDataInCurrentList;
+            currentReceivedAdvertisementDataList.AddRange(uniqueManufacturerData);
+            currentReceivedAdvertisementDataList = currentReceivedAdvertisementDataList
+                                                    .OrderBy(ad => GetCustomSortPriority(ad.Type))
+                                                    .ThenBy(ad => ad.Type) // Secondary sort by Type for stability within the same priority
+                                                    .ThenBy(ad => ad.ValueHex)
+                                                    .ToList();
+            // --- 新增去重和排序逻辑 结束 ---
 
-                    advertisementDataList.Add(adData);
-
-                    // 添加到原始数据字符串，包含长度字段
-                    rawData += $"{adData.Length:X2} {type:X2} {uuidStr} ";
-                }
-            }
-
-            // 如果设备已存在，更新信息
+            // 如果设备已存在，则合并更新信息
             if (_deviceCache.ContainsKey(deviceId))
             {
-                // 更新现有设备信息
-                _deviceCache[deviceId].Rssi = args.RawSignalStrengthInDBm;
-                _deviceCache[deviceId].LastSeen = DateTime.Now;
-                _deviceCache[deviceId].AdvertisementData = advertisementDataList;
-                _deviceCache[deviceId].RawAdvertisementData = rawData.Trim();
+                var existingDevice = _deviceCache[deviceId];
+                existingDevice.Rssi = args.RawSignalStrengthInDBm;
+                existingDevice.LastSeen = DateTime.Now;
 
-                // 通知设备更新
-                DeviceDiscovered?.Invoke(this, _deviceCache[deviceId]);
+                // 1. 处理非制造商数据 (Types != 0xFF)
+                var mergedNonManufacturerData = existingDevice.AdvertisementData
+                                                    .Where(ad => ad.Type != 0xFF)
+                                                    .ToDictionary(ad => ad.Type, ad => ad);
+
+                foreach (var newAdData in currentReceivedAdvertisementDataList.Where(ad => ad.Type != 0xFF))
+                {
+                    mergedNonManufacturerData[newAdData.Type] = newAdData; // 更新或添加
+                }
+
+                // 2. 处理制造商数据 (Type == 0xFF) - 累积唯一值
+                var existingManufacturerData = existingDevice.AdvertisementData
+                                                    .Where(ad => ad.Type == 0xFF)
+                                                    .ToList();
+                var currentManufacturerDataFromAdv = currentReceivedAdvertisementDataList
+                                                    .Where(ad => ad.Type == 0xFF)
+                                                    .ToList(); // currentReceivedAdvertisementDataList中的0xFF数据已经针对当次广播去重
+
+                // 合并已有的和当前新接收的制造商数据
+                var combinedManufacturerData = existingManufacturerData;
+                combinedManufacturerData.AddRange(currentManufacturerDataFromAdv);
+
+                // 对合并后的所有制造商数据进行最终去重
+                var uniqueTotalManufacturerData = combinedManufacturerData
+                                                    .GroupBy(ad => ad.ValueHex) // 根据ValueHex去重，确保CompanyID+Data的唯一性
+                                                    .Select(g => g.First())
+                                                    .ToList();
+
+                // 3. 组合新的 AdvertisementData 列表
+                var newFullAdvertisementData = mergedNonManufacturerData.Values.ToList();
+                newFullAdvertisementData.AddRange(uniqueTotalManufacturerData); // 添加累积且去重后的制造商数据
+                
+                existingDevice.AdvertisementData = newFullAdvertisementData
+                                                    .OrderBy(ad => GetCustomSortPriority(ad.Type))
+                                                    .ThenBy(ad => ad.Type) // Secondary sort by Type
+                                                    .ThenBy(ad => ad.ValueHex)
+                                                    .ToList();
+
+                // 重新构建 RawAdvertisementData 字符串
+                string newRawData = string.Empty;
+                foreach (var adData in existingDevice.AdvertisementData)
+                {
+                    newRawData += $"{adData.Length:X2} {adData.Type:X2} {adData.ValueHex} ";
+                }
+                existingDevice.RawAdvertisementData = newRawData.Trim();
+
+                DeviceDiscovered?.Invoke(this, existingDevice);
                 return;
             }
 
-            // 创建新的设备信息
+            // 如果是新设备，则创建新的设备信息
+            // currentReceivedAdvertisementDataList 此时已经去重和排序过了
+            string initialRawData = string.Empty;
+            foreach (var adData in currentReceivedAdvertisementDataList) // currentReceivedAdvertisementDataList 已按自定义优先级排序
+            {
+                initialRawData += $"{adData.Length:X2} {adData.Type:X2} {adData.ValueHex} ";
+            }
+            
             var deviceInfo = new BleDeviceInfo
             {
                 Id = deviceId,
@@ -257,8 +284,8 @@ public class BleService {
                 Address = args.BluetoothAddress,
                 Rssi = args.RawSignalStrengthInDBm,
                 LastSeen = DateTime.Now,
-                AdvertisementData = advertisementDataList,
-                RawAdvertisementData = rawData.Trim()
+                AdvertisementData = currentReceivedAdvertisementDataList, // 使用去重和排序后的列表
+                RawAdvertisementData = initialRawData.Trim()
             };
 
             // 尝试获取更多设备信息
@@ -271,6 +298,34 @@ public class BleService {
         catch (Exception ex)
         {
             ErrorOccurred?.Invoke(this, $"处理设备广播时出错: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 获取用于排序的自定义优先级。
+    /// </summary>
+    /// <param name="type">广告数据类型。</param>
+    /// <returns>排序优先级。</returns>
+    private int GetCustomSortPriority(byte type)
+    {
+        switch (type)
+        {
+            case 0x01: return 1;  // Flags
+            case 0x03: return 2;  // Complete List of 16-bit Service Class UUIDs
+            case 0x02: return 3;  // Incomplete List of 16-bit Service Class UUIDs
+            case 0x07: return 4;  // Complete List of 128-bit Service Class UUIDs
+            case 0x06: return 5;  // Incomplete List of 128-bit Service Class UUIDs
+            case 0x05: return 6;  // Complete List of 32-bit Service Class UUIDs
+            case 0x04: return 7;  // Incomplete List of 32-bit Service Class UUIDs
+            case 0xFF: return 8;  // Manufacturer Specific Data
+            case 0x09: return 9;  // Complete Local Name
+            case 0x08: return 10; // Shortened Local Name
+            case 0x0A: return 11; // TX Power Level
+            case 0x16: return 12; // Service Data - 16-bit UUID
+            case 0x20: return 13; // Service Data - 32-bit UUID
+            case 0x21: return 14; // Service Data - 128-bit UUID
+            // 可以根据需要添加更多类型及其优先级
+            default: return 100 + type; // 其他未指定类型，按原类型值排序，确保它们在已定义类型之后
         }
     }
 
