@@ -1,6 +1,8 @@
 ﻿using Avalonia.Ble.Services;
 using Avalonia.Ble.Views;
+using Avalonia.Controls;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -18,13 +20,15 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly BleService _bleService;
 
+    // 保存DataGrid的滚动位置
+    private double _scrollPosition = 0;
+
     [ObservableProperty]
     private bool _isScanning;
 
     [ObservableProperty]
     private string _statusMessage = "请点击开始扫描按钮";
 
-    [ObservableProperty]
     private ObservableCollection<BleDeviceInfo> _discoveredDevices = [];
 
     /// <summary>
@@ -145,12 +149,14 @@ public partial class MainWindowViewModel : ViewModelBase
             // 先清空选中的设备，避免引用已删除的对象
             SelectedDevice = null;
 
+            // 创建新的空集合替换原集合
             lock (_discoveredDevices)
             {
-                _discoveredDevices.Clear();
+                _discoveredDevices = new ObservableCollection<BleDeviceInfo>();
             }
 
-            FilteredDevices.Clear();
+            // 创建新的空集合替换过滤后的集合
+            FilteredDevices = new ObservableCollection<BleDeviceInfo>();
         });
 
         _bleService.StartScan();
@@ -211,7 +217,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ApplyFilter()
     {
         // 创建一个临时列表，避免直接修改原集合
-        var tempList = new List<BleDeviceInfo>();
+        List<BleDeviceInfo> tempList;
 
         // 在临时列表中应用过滤
         lock (_discoveredDevices)
@@ -219,11 +225,12 @@ public partial class MainWindowViewModel : ViewModelBase
             if (!IsFilterEnabled || string.IsNullOrWhiteSpace(DeviceNameFilter))
             {
                 // 如果未启用过滤或过滤文本为空，显示所有设备
-                tempList.AddRange(_discoveredDevices);
+                tempList = new List<BleDeviceInfo>(_discoveredDevices);
             }
             else
             {
                 // 应用过滤
+                tempList = new List<BleDeviceInfo>();
                 foreach (var device in _discoveredDevices)
                 {
                     if (device.Name.Contains(DeviceNameFilter, StringComparison.OrdinalIgnoreCase))
@@ -241,12 +248,33 @@ public partial class MainWindowViewModel : ViewModelBase
             BleDeviceInfo? currentSelectedDevice = SelectedDevice;
             string? selectedDeviceId = currentSelectedDevice?.Id;
 
-            // 更新过滤后的设备列表
-            FilteredDevices.Clear();
+            // 获取DataGrid的ScrollViewer
+            if (App.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                if (desktop.MainWindow is Views.MainWindow mainWindow)
+                {
+                    // 保存滚动位置
+                    var dataGrid = mainWindow.FindControl<Avalonia.Controls.DataGrid>("DevicesDataGrid");
+                    if (dataGrid != null)
+                    {
+                        var scrollViewer = dataGrid.FindDescendantOfType<Avalonia.Controls.ScrollViewer>();
+                        if (scrollViewer != null)
+                        {
+                            SaveScrollPosition(scrollViewer);
+                        }
+                    }
+                }
+            }
+
+            // 创建一个新的ObservableCollection，而不是修改现有的集合
+            var newFilteredDevices = new ObservableCollection<BleDeviceInfo>();
             foreach (var device in tempList)
             {
-                FilteredDevices.Add(device);
+                newFilteredDevices.Add(device);
             }
+
+            // 替换整个集合，而不是修改现有集合
+            FilteredDevices = newFilteredDevices;
 
             // 如果之前有选中的设备，尝试在新列表中找到它并重新选中
             if (selectedDeviceId != null)
@@ -260,6 +288,26 @@ public partial class MainWindowViewModel : ViewModelBase
                     }
                 }
             }
+
+            // 恢复滚动位置
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (App.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                {
+                    if (desktop.MainWindow is Views.MainWindow mainWindow)
+                    {
+                        var dataGrid = mainWindow.FindControl<Avalonia.Controls.DataGrid>("DevicesDataGrid");
+                        if (dataGrid != null)
+                        {
+                            var scrollViewer = dataGrid.FindDescendantOfType<Avalonia.Controls.ScrollViewer>();
+                            if (scrollViewer != null)
+                            {
+                                RestoreScrollPosition(scrollViewer);
+                            }
+                        }
+                    }
+                }
+            }, DispatcherPriority.Render);
         });
     }
 
@@ -298,17 +346,23 @@ public partial class MainWindowViewModel : ViewModelBase
             BleDeviceInfo? currentSelectedDevice = SelectedDevice;
             string? selectedDeviceId = currentSelectedDevice?.Id;
 
+            // 创建一个新的设备列表，避免直接修改原集合
+            List<BleDeviceInfo> updatedDevices;
+
             lock (_discoveredDevices)
             {
+                // 复制当前设备列表
+                updatedDevices = new List<BleDeviceInfo>(_discoveredDevices);
+
                 // 检查设备是否已存在于集合中
                 BleDeviceInfo? existingDevice = null;
                 int existingIndex = -1;
 
-                for (int i = 0; i < _discoveredDevices.Count; i++)
+                for (int i = 0; i < updatedDevices.Count; i++)
                 {
-                    if (_discoveredDevices[i].Id == deviceInfoCopy.Id)
+                    if (updatedDevices[i].Id == deviceInfoCopy.Id)
                     {
-                        existingDevice = _discoveredDevices[i];
+                        existingDevice = updatedDevices[i];
                         existingIndex = i;
                         break;
                     }
@@ -349,13 +403,20 @@ public partial class MainWindowViewModel : ViewModelBase
                         }
 
                         // 如果不是选中的设备，直接更新
-                        _discoveredDevices[existingIndex] = deviceInfoCopy;
+                        updatedDevices[existingIndex] = deviceInfoCopy;
                     }
                 }
                 else
                 {
                     // 添加新设备，但不自动选中它
-                    _discoveredDevices.Add(deviceInfoCopy);
+                    updatedDevices.Add(deviceInfoCopy);
+                }
+
+                // 用新列表替换原列表
+                _discoveredDevices.Clear();
+                foreach (var device in updatedDevices)
+                {
+                    _discoveredDevices.Add(device);
                 }
             }
 
@@ -519,6 +580,30 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ToggleFilter()
     {
         IsFilterEnabled = !IsFilterEnabled;
+    }
+
+    /// <summary>
+    /// 保存DataGrid的滚动位置。
+    /// </summary>
+    /// <param name="scrollViewer">ScrollViewer控件。</param>
+    public void SaveScrollPosition(object scrollViewer)
+    {
+        if (scrollViewer is Avalonia.Controls.ScrollViewer viewer)
+        {
+            _scrollPosition = viewer.Offset.Y;
+        }
+    }
+
+    /// <summary>
+    /// 恢复DataGrid的滚动位置。
+    /// </summary>
+    /// <param name="scrollViewer">ScrollViewer控件。</param>
+    public void RestoreScrollPosition(object scrollViewer)
+    {
+        if (scrollViewer is Avalonia.Controls.ScrollViewer viewer)
+        {
+            viewer.Offset = new Avalonia.Vector(viewer.Offset.X, _scrollPosition);
+        }
     }
 
     /// <summary>
