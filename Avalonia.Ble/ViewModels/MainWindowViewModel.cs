@@ -1,11 +1,16 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using Avalonia.Ble.Services;
+
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+
 using System.Collections.ObjectModel;
 
 namespace Avalonia.Ble.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase // Changed from ViewModelBase
 {
+    private readonly BleService _bleService;
+
     [ObservableProperty]
     private bool _isScanning;
 
@@ -18,13 +23,23 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
     [ObservableProperty]
     private object? _selectedDevice;
 
+    public MainWindowViewModel()
+    {
+        _bleService = new BleService();
+        _bleService.DeviceDiscovered += OnDeviceDiscovered;
+        _bleService.ScanStatusChanged += OnScanStatusChanged;
+        _bleService.ErrorOccurred += OnErrorOccurred;
+    }
+
     [RelayCommand]
     private void StartScan()
     {
         IsScanning = true;
         StatusMessage = "正在扫描设备...";
         // 在这里添加开始扫描的逻辑
-        // 例如: DiscoveredDevices.Add(new { Name = "Test Device", Id = "123", SignalStrength = -50, LastSeenTime = DateTime.Now, IsConnectable = true });
+        DiscoveredDevices.Clear();
+        _bleService.StartScan();
+        IsScanning = true;
     }
 
     [RelayCommand(CanExecute = nameof(CanStopScan))]
@@ -33,6 +48,8 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
         IsScanning = false;
         StatusMessage = "扫描已停止。";
         // 在这里添加停止扫描的逻辑
+        _bleService.StopScan();
+        IsScanning = false;
     }
 
     private bool CanStopScan() => IsScanning;
@@ -41,5 +58,20 @@ public partial class MainWindowViewModel : ViewModelBase // Changed from ViewMod
     partial void OnIsScanningChanged(bool value)
     {
         StopScanCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnDeviceDiscovered(object? sender, BleDeviceInfo deviceInfo)
+    {
+
+    }
+
+    private void OnScanStatusChanged(object? sender, string status)
+    {
+
+    }
+
+    private void OnErrorOccurred(object? sender, string errorMessage)
+    {
+
     }
 }

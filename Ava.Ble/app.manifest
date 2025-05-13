@@ -17,8 +17,8 @@
   </compatibility>
 
   <!-- Windows 10 and Windows 11 Bluetooth capabilities -->
-  <capabilities>
+  <!--<capabilities>
     <capability name="internetClient" />
     <deviceCapability name="bluetooth" />
-  </capabilities>
+  </capabilities>-->
 </assembly>
