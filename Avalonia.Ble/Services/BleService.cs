@@ -126,19 +126,52 @@ public class BleService {
         {
             string deviceId = args.BluetoothAddress.ToString("X");
 
-            if (_deviceCache.ContainsKey(deviceId))
-            {
-                // 更新现有设备信息
-                _deviceCache[deviceId].Rssi = args.RawSignalStrengthInDBm;
-                _deviceCache[deviceId].LastSeen = DateTime.Now;
-                return;
-            }
-
             // 获取设备名称
             string deviceName = args.Advertisement.LocalName;
             if (string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "未知设备";
+            }
+
+            // 处理广播数据
+            List<BleAdvertisementData> advertisementDataList = new List<BleAdvertisementData>();
+            string rawData = string.Empty;
+
+            // 获取原始广播数据
+            if (args.Advertisement.DataSections != null && args.Advertisement.DataSections.Count > 0)
+            {
+                foreach (var section in args.Advertisement.DataSections)
+                {
+                    var reader = Windows.Storage.Streams.DataReader.FromBuffer(section.Data);
+                    byte[] data = new byte[section.Data.Length];
+                    reader.ReadBytes(data);
+
+                    var adData = new BleAdvertisementData
+                    {
+                        Length = (byte)(data.Length + 1), // +1 for type
+                        Type = section.DataType,
+                        Value = data
+                    };
+
+                    advertisementDataList.Add(adData);
+
+                    // 添加到原始数据字符串
+                    rawData += $"{adData.Length:X2} {adData.Type:X2} {BitConverter.ToString(adData.Value).Replace("-", " ")} ";
+                }
+            }
+
+            // 如果设备已存在，更新信息
+            if (_deviceCache.ContainsKey(deviceId))
+            {
+                // 更新现有设备信息
+                _deviceCache[deviceId].Rssi = args.RawSignalStrengthInDBm;
+                _deviceCache[deviceId].LastSeen = DateTime.Now;
+                _deviceCache[deviceId].AdvertisementData = advertisementDataList;
+                _deviceCache[deviceId].RawAdvertisementData = rawData.Trim();
+
+                // 通知设备更新
+                DeviceDiscovered?.Invoke(this, _deviceCache[deviceId]);
+                return;
             }
 
             // 创建新的设备信息
@@ -148,7 +181,9 @@ public class BleService {
                 Name = deviceName,
                 Address = args.BluetoothAddress,
                 Rssi = args.RawSignalStrengthInDBm,
-                LastSeen = DateTime.Now
+                LastSeen = DateTime.Now,
+                AdvertisementData = advertisementDataList,
+                RawAdvertisementData = rawData.Trim()
             };
 
             // 尝试获取更多设备信息
@@ -425,6 +460,14 @@ public class BleDeviceInfo {
     /// </summary>
     public List<BleServiceInfo> Services { get; set; } = new List<BleServiceInfo>();
     /// <summary>
+    /// 获取或设置设备的广播数据。
+    /// </summary>
+    public List<BleAdvertisementData> AdvertisementData { get; set; } = new List<BleAdvertisementData>();
+    /// <summary>
+    /// 获取或设置设备的原始广播数据。
+    /// </summary>
+    public string RawAdvertisementData { get; set; } = string.Empty;
+    /// <summary>
     /// 获取设备的连接状态。
     /// </summary>
     public string ConnectionStatus => IsConnected ? "已连接" : "未连接";
@@ -511,4 +554,63 @@ public class BleCharacteristicInfo {
     /// 获取特征的属性。
     /// </summary>
     public string Properties => $"{(CanRead ? "读 " : "")}{(CanWrite ? "写 " : "")}{(CanNotify ? "通知" : "")}";
+}
+
+/// <summary>
+/// 表示 BLE 广播数据的信息。
+/// </summary>
+public class BleAdvertisementData {
+    /// <summary>
+    /// 获取或设置数据长度。
+    /// </summary>
+    public byte Length { get; set; }
+
+    /// <summary>
+    /// 获取或设置数据类型。
+    /// </summary>
+    public byte Type { get; set; }
+
+    /// <summary>
+    /// 获取或设置数据值。
+    /// </summary>
+    public byte[] Value { get; set; } = Array.Empty<byte>();
+
+    /// <summary>
+    /// 获取数据类型的名称。
+    /// </summary>
+    public string TypeName => GetTypeName(Type);
+
+    /// <summary>
+    /// 获取数据值的十六进制字符串表示。
+    /// </summary>
+    public string ValueHex => BitConverter.ToString(Value).Replace("-", " ");
+
+    /// <summary>
+    /// 获取数据类型的名称。
+    /// </summary>
+    /// <param name="type">数据类型。</param>
+    /// <returns>数据类型的名称。</returns>
+    private static string GetTypeName(byte type) {
+        return type switch {
+            0x01 => "Flags",
+            0x02 => "Incomplete List of 16-bit Service Class UUIDs",
+            0x03 => "Complete List of 16-bit Service Class UUIDs",
+            0x04 => "Incomplete List of 32-bit Service Class UUIDs",
+            0x05 => "Complete List of 32-bit Service Class UUIDs",
+            0x06 => "Incomplete List of 128-bit Service Class UUIDs",
+            0x07 => "Complete List of 128-bit Service Class UUIDs",
+            0x08 => "Shortened Local Name",
+            0x09 => "Complete Local Name",
+            0x0A => "TX Power Level",
+            0x0D => "Class of Device",
+            0x0E => "Simple Pairing Hash C",
+            0x0F => "Simple Pairing Randomizer R",
+            0x10 => "Device ID",
+            0x16 => "Service Data - 16-bit UUID",
+            0x20 => "Service Data - 32-bit UUID",
+            0x21 => "Service Data - 128-bit UUID",
+            0xFF => "Manufacturer Specific Data",
+            _ => $"Unknown Type (0x{type:X2})"
+        };
+    }
 }

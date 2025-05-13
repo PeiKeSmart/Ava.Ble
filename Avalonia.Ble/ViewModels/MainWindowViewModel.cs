@@ -1,4 +1,5 @@
 ﻿using Avalonia.Ble.Services;
+using Avalonia.Ble.Views;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -322,5 +323,32 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool CanDisconnect()
     {
         return SelectedDevice != null && SelectedDevice.IsConnected;
+    }
+
+    /// <summary>
+    /// 查看设备的广播数据。
+    /// </summary>
+    /// <param name="parameter">设备参数，如果为null则使用当前选中的设备。</param>
+    [RelayCommand]
+    private void ViewAdvertisementData(object? parameter)
+    {
+        // 获取设备信息
+        BleDeviceInfo? device = parameter as BleDeviceInfo ?? SelectedDevice;
+        if (device == null) return;
+
+        // 检查设备是否有广播数据
+        if (device.AdvertisementData == null || device.AdvertisementData.Count == 0)
+        {
+            // 如果没有广播数据，显示提示信息
+            StatusMessage = "该设备没有广播数据";
+            return;
+        }
+
+        // 创建并显示广播数据窗口
+        var window = new AdvertisementDataWindow(device);
+        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            window.ShowDialog(desktop.MainWindow);
+        }
     }
 }

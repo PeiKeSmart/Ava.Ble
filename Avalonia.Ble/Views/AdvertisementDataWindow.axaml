@@ -1,0 +1,60 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Avalonia.Ble.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="Avalonia.Ble.Views.AdvertisementDataWindow"
+        x:DataType="vm:AdvertisementDataViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="广播数据详情"
+        Width="700" Height="500"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:AdvertisementDataViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,Auto,*" Margin="10">
+        <!-- 设备信息 -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="设备信息" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.DisplayName, StringFormat='设备名称: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.Id, StringFormat='设备ID: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.SignalStrength, StringFormat='信号强度: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.LastSeenTime, StringFormat='最后发现时间: {0}'}" Margin="0,0,0,5"/>
+        </StackPanel>
+
+        <!-- 原始广播数据 -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="原始广播数据" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+            <Border BorderBrush="Gray" BorderThickness="1" Padding="5">
+                <TextBlock Text="{Binding RawData}" TextWrapping="Wrap"/>
+            </Border>
+        </StackPanel>
+
+        <!-- 广播数据详情 -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="广播数据详情" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+
+            <DataGrid Grid.Row="1"
+                      ItemsSource="{Binding AdvertisementData}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      GridLinesVisibility="All"
+                      BorderThickness="1">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="长度 (LEN)" Binding="{Binding Length}" Width="80"/>
+                    <DataGridTextColumn Header="类型 (TYPE)" Binding="{Binding Type, StringFormat=0x\{0:X2\}}" Width="100"/>
+                    <DataGridTextColumn Header="类型名称" Binding="{Binding TypeName}" Width="220"/>
+                    <DataGridTextColumn Header="数据值 (VALUE)" Binding="{Binding ValueHex}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+    </Grid>
+</Window>

@@ -3,11 +3,13 @@
         xmlns:vm="using:Avalonia.Ble.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="750" d:DesignHeight="500"
         x:Class="Avalonia.Ble.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Avalonia.Ble">
+        Title="Avalonia.Ble"
+        Width="750" Height="550"
+        WindowStartupLocation="CenterScreen">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
@@ -31,11 +33,23 @@
                   BorderThickness="1"
                   Margin="0,0,0,10">
 			<DataGrid.Columns>
-				<DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" />
-				<DataGridTextColumn Header="设备ID" Binding="{Binding Id}" Width="*" />
+				<DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="150" />
+				<DataGridTextColumn Header="设备ID" Binding="{Binding Id}" Width="150" />
 				<DataGridTextColumn Header="信号强度" Binding="{Binding SignalStrength}" Width="100" />
 				<DataGridTextColumn Header="最后发现时间" Binding="{Binding LastSeenTime}" Width="120" />
 				<DataGridCheckBoxColumn Header="可连接" Binding="{Binding IsConnectable}" Width="80" />
+				<DataGridTemplateColumn Header="操作" Width="100">
+					<DataGridTemplateColumn.CellTemplate>
+						<DataTemplate>
+							<Button Content="查看广播"
+									Command="{Binding $parent[DataGrid].DataContext.ViewAdvertisementDataCommand}"
+									CommandParameter="{Binding}"
+									HorizontalAlignment="Center"
+									VerticalAlignment="Center"
+									Margin="2"/>
+						</DataTemplate>
+					</DataGridTemplateColumn.CellTemplate>
+				</DataGridTemplateColumn>
 			</DataGrid.Columns>
 		</DataGrid>
 
@@ -61,6 +75,9 @@
 					<Button Command="{Binding DisconnectCommand}"
 							IsEnabled="{Binding SelectedDevice.IsConnected}"
 							Content="断开连接"
+							Width="100" />
+					<Button Command="{Binding ViewAdvertisementDataCommand}"
+							Content="查看广播"
 							Width="100" />
 				</StackPanel>
 			</Grid>
