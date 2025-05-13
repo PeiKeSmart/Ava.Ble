@@ -142,6 +142,9 @@ public partial class MainWindowViewModel : ViewModelBase
         // 在UI线程上清空集合
         Dispatcher.UIThread.Post(() =>
         {
+            // 先清空选中的设备，避免引用已删除的对象
+            SelectedDevice = null;
+
             lock (_discoveredDevices)
             {
                 _discoveredDevices.Clear();
@@ -234,10 +237,28 @@ public partial class MainWindowViewModel : ViewModelBase
         // 在UI线程上更新FilteredDevices集合
         Dispatcher.UIThread.Post(() =>
         {
+            // 保存当前选中的设备
+            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
+            string? selectedDeviceId = currentSelectedDevice?.Id;
+
+            // 更新过滤后的设备列表
             FilteredDevices.Clear();
             foreach (var device in tempList)
             {
                 FilteredDevices.Add(device);
+            }
+
+            // 如果之前有选中的设备，尝试在新列表中找到它并重新选中
+            if (selectedDeviceId != null)
+            {
+                foreach (var device in FilteredDevices)
+                {
+                    if (device.Id == selectedDeviceId)
+                    {
+                        SelectedDevice = device;
+                        break;
+                    }
+                }
             }
         });
     }
@@ -273,11 +294,12 @@ public partial class MainWindowViewModel : ViewModelBase
         // 使用UI线程更新集合
         Dispatcher.UIThread.Post(() =>
         {
+            // 保存当前选中的设备
+            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
+            string? selectedDeviceId = currentSelectedDevice?.Id;
+
             lock (_discoveredDevices)
             {
-                // 保存当前选中的设备
-                BleDeviceInfo? currentSelectedDevice = SelectedDevice;
-
                 // 检查设备是否已存在于集合中
                 BleDeviceInfo? existingDevice = null;
                 int existingIndex = -1;
@@ -299,7 +321,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     var services = existingDevice.Services;
 
                     // 检查是否是当前选中的设备
-                    bool isSelectedDevice = (currentSelectedDevice != null && existingDevice.Id == currentSelectedDevice.Id);
+                    bool isSelectedDevice = (selectedDeviceId != null && existingDevice.Id == selectedDeviceId);
 
                     // 如果是选中的设备，直接更新其属性而不是替换整个对象
                     if (isSelectedDevice)
