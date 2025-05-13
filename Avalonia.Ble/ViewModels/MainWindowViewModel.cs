@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 
@@ -25,6 +26,29 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private ObservableCollection<BleDeviceInfo> _discoveredDevices = [];
+
+    /// <summary>
+    /// 获取或设置过滤后的设备列表。
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<BleDeviceInfo> _filteredDevices = [];
+
+    /// <summary>
+    /// 获取或设置设备名称过滤文本。
+    /// </summary>
+    [ObservableProperty]
+    private string _deviceNameFilter = string.Empty;
+
+    /// <summary>
+    /// 获取或设置是否启用过滤。
+    /// </summary>
+    [ObservableProperty]
+    private bool _isFilterEnabled = false;
+
+    /// <summary>
+    /// 获取过滤按钮文本。
+    /// </summary>
+    public string FilterButtonText => IsFilterEnabled ? "关闭过滤" : "开启过滤";
 
     [ObservableProperty]
     private BleDeviceInfo? _selectedDevice;
@@ -56,6 +80,9 @@ public partial class MainWindowViewModel : ViewModelBase
         _bleService.DeviceConnected += OnDeviceConnected;
         _bleService.DeviceDisconnected += OnDeviceDisconnected;
         _bleService.ServiceDiscovered += OnServiceDiscovered;
+
+        // 初始化过滤后的设备列表
+        ApplyFilter();
     }
 
     /// <summary>
@@ -111,7 +138,18 @@ public partial class MainWindowViewModel : ViewModelBase
     private void StartScan()
     {
         StatusMessage = "正在扫描设备...";
-        DiscoveredDevices.Clear();
+
+        // 在UI线程上清空集合
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_discoveredDevices)
+            {
+                _discoveredDevices.Clear();
+            }
+
+            FilteredDevices.Clear();
+        });
+
         _bleService.StartScan();
         IsScanning = true;
     }
@@ -143,75 +181,164 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// 当设备名称过滤文本更改时调用。
+    /// </summary>
+    /// <param name="value">新的过滤文本。</param>
+    partial void OnDeviceNameFilterChanged(string value)
+    {
+        if (IsFilterEnabled)
+        {
+            ApplyFilter();
+        }
+    }
+
+    /// <summary>
+    /// 当是否启用过滤更改时调用。
+    /// </summary>
+    /// <param name="value">新的启用状态。</param>
+    partial void OnIsFilterEnabledChanged(bool value)
+    {
+        ApplyFilter();
+        OnPropertyChanged(nameof(FilterButtonText));
+    }
+
+    /// <summary>
+    /// 应用设备过滤。
+    /// </summary>
+    private void ApplyFilter()
+    {
+        // 创建一个临时列表，避免直接修改原集合
+        var tempList = new List<BleDeviceInfo>();
+
+        // 在临时列表中应用过滤
+        lock (_discoveredDevices)
+        {
+            if (!IsFilterEnabled || string.IsNullOrWhiteSpace(DeviceNameFilter))
+            {
+                // 如果未启用过滤或过滤文本为空，显示所有设备
+                tempList.AddRange(_discoveredDevices);
+            }
+            else
+            {
+                // 应用过滤
+                foreach (var device in _discoveredDevices)
+                {
+                    if (device.Name.Contains(DeviceNameFilter, StringComparison.OrdinalIgnoreCase))
+                    {
+                        tempList.Add(device);
+                    }
+                }
+            }
+        }
+
+        // 在UI线程上更新FilteredDevices集合
+        Dispatcher.UIThread.Post(() =>
+        {
+            FilteredDevices.Clear();
+            foreach (var device in tempList)
+            {
+                FilteredDevices.Add(device);
+            }
+        });
+    }
+
+    /// <summary>
     /// 处理 DeviceDiscovered 事件。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="deviceInfo">发现的设备信息。</param>
     private void OnDeviceDiscovered(object? sender, BleDeviceInfo deviceInfo)
     {
+        // 创建设备信息的副本，避免在多线程环境中修改原始对象
+        var deviceInfoCopy = new BleDeviceInfo
+        {
+            Id = deviceInfo.Id,
+            Name = deviceInfo.Name,
+            Address = deviceInfo.Address,
+            Rssi = deviceInfo.Rssi,
+            LastSeen = deviceInfo.LastSeen,
+            IsConnectable = deviceInfo.IsConnectable,
+            ServiceCount = deviceInfo.ServiceCount,
+            IsConnected = deviceInfo.IsConnected
+        };
+
+        // 复制广播数据
+        foreach (var adData in deviceInfo.AdvertisementData)
+        {
+            deviceInfoCopy.AdvertisementData.Add(adData);
+        }
+
+        deviceInfoCopy.RawAdvertisementData = deviceInfo.RawAdvertisementData;
+
         // 使用UI线程更新集合
         Dispatcher.UIThread.Post(() =>
         {
-            // 保存当前选中的设备
-            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
-
-            // 检查设备是否已存在于集合中
-            BleDeviceInfo? existingDevice = null;
-            int existingIndex = -1;
-
-            for (int i = 0; i < DiscoveredDevices.Count; i++)
+            lock (_discoveredDevices)
             {
-                if (DiscoveredDevices[i].Id == deviceInfo.Id)
+                // 保存当前选中的设备
+                BleDeviceInfo? currentSelectedDevice = SelectedDevice;
+
+                // 检查设备是否已存在于集合中
+                BleDeviceInfo? existingDevice = null;
+                int existingIndex = -1;
+
+                for (int i = 0; i < _discoveredDevices.Count; i++)
                 {
-                    existingDevice = DiscoveredDevices[i];
-                    existingIndex = i;
-                    break;
-                }
-            }
-
-            if (existingDevice != null)
-            {
-                // 保存当前设备的连接状态和服务信息
-                bool isConnected = existingDevice.IsConnected;
-                var services = existingDevice.Services;
-
-                // 检查是否是当前选中的设备
-                bool isSelectedDevice = (currentSelectedDevice != null && existingDevice.Id == currentSelectedDevice.Id);
-
-                // 如果是选中的设备，直接更新其属性而不是替换整个对象
-                if (isSelectedDevice)
-                {
-                    // 更新现有对象的属性
-                    existingDevice.Rssi = deviceInfo.Rssi;
-                    existingDevice.LastSeen = deviceInfo.LastSeen;
-                    existingDevice.AdvertisementData = deviceInfo.AdvertisementData;
-                    existingDevice.RawAdvertisementData = deviceInfo.RawAdvertisementData;
-                    existingDevice.IsConnectable = deviceInfo.IsConnectable;
-
-                    // 如果名称为空或未知，则更新名称
-                    if (string.IsNullOrEmpty(existingDevice.Name) || existingDevice.Name == "未知设备")
+                    if (_discoveredDevices[i].Id == deviceInfoCopy.Id)
                     {
-                        existingDevice.Name = deviceInfo.Name;
+                        existingDevice = _discoveredDevices[i];
+                        existingIndex = i;
+                        break;
+                    }
+                }
+
+                if (existingDevice != null)
+                {
+                    // 保存当前设备的连接状态和服务信息
+                    bool isConnected = existingDevice.IsConnected;
+                    var services = existingDevice.Services;
+
+                    // 检查是否是当前选中的设备
+                    bool isSelectedDevice = (currentSelectedDevice != null && existingDevice.Id == currentSelectedDevice.Id);
+
+                    // 如果是选中的设备，直接更新其属性而不是替换整个对象
+                    if (isSelectedDevice)
+                    {
+                        // 更新现有对象的属性
+                        existingDevice.Rssi = deviceInfoCopy.Rssi;
+                        existingDevice.LastSeen = deviceInfoCopy.LastSeen;
+                        existingDevice.AdvertisementData = deviceInfoCopy.AdvertisementData;
+                        existingDevice.RawAdvertisementData = deviceInfoCopy.RawAdvertisementData;
+                        existingDevice.IsConnectable = deviceInfoCopy.IsConnectable;
+
+                        // 如果名称为空或未知，则更新名称
+                        if (string.IsNullOrEmpty(existingDevice.Name) || existingDevice.Name == "未知设备")
+                        {
+                            existingDevice.Name = deviceInfoCopy.Name;
+                        }
+                    }
+                    else
+                    {
+                        // 创建更新后的设备对象
+                        deviceInfoCopy.IsConnected = isConnected;
+                        if (isConnected)
+                        {
+                            deviceInfoCopy.Services = services;
+                        }
+
+                        // 如果不是选中的设备，直接更新
+                        _discoveredDevices[existingIndex] = deviceInfoCopy;
                     }
                 }
                 else
                 {
-                    // 创建更新后的设备对象
-                    deviceInfo.IsConnected = isConnected;
-                    if (isConnected)
-                    {
-                        deviceInfo.Services = services;
-                    }
-
-                    // 如果不是选中的设备，直接更新
-                    DiscoveredDevices[existingIndex] = deviceInfo;
+                    // 添加新设备，但不自动选中它
+                    _discoveredDevices.Add(deviceInfoCopy);
                 }
             }
-            else
-            {
-                // 添加新设备，但不自动选中它
-                DiscoveredDevices.Add(deviceInfo);
-            }
+
+            // 应用过滤
+            ApplyFilter();
         });
     }
 
@@ -361,6 +488,15 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool CanDisconnect()
     {
         return SelectedDevice != null && SelectedDevice.IsConnected;
+    }
+
+    /// <summary>
+    /// 切换过滤状态。
+    /// </summary>
+    [RelayCommand]
+    private void ToggleFilter()
+    {
+        IsFilterEnabled = !IsFilterEnabled;
     }
 
     /// <summary>

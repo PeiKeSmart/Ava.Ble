@@ -18,15 +18,24 @@
     </Design.DataContext>
 
 	<Grid RowDefinitions="Auto,*,Auto" Margin="10">
-		<StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
-			<Button Command="{Binding StartScanCommand}" IsEnabled="{Binding !IsScanning}" Content="开始扫描" />
-			<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
-			<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
-		</StackPanel>
+		<Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,10">
+			<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+				<Button Command="{Binding StartScanCommand}" IsEnabled="{Binding !IsScanning}" Content="开始扫描" />
+				<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
+				<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
+			</StackPanel>
+
+			<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+				<TextBlock Text="设备名称过滤:" VerticalAlignment="Center" />
+				<TextBox Text="{Binding DeviceNameFilter}" Width="150" Watermark="输入设备名称..." />
+				<CheckBox Content="启用过滤" IsChecked="{Binding IsFilterEnabled}" />
+				<Button Command="{Binding ToggleFilterCommand}" Content="{Binding FilterButtonText}" />
+			</StackPanel>
+		</Grid>
 
 		<DataGrid Grid.Row="1"
                   Name="DevicesDataGrid"
-                  ItemsSource="{Binding DiscoveredDevices}"
+                  ItemsSource="{Binding FilteredDevices}"
                   SelectedItem="{Binding SelectedDevice}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
