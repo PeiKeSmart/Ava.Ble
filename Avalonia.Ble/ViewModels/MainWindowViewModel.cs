@@ -152,22 +152,56 @@ public partial class MainWindowViewModel : ViewModelBase
         // 使用UI线程更新集合
         Dispatcher.UIThread.Post(() =>
         {
+            // 保存当前选中的设备
+            BleDeviceInfo? currentSelectedDevice = SelectedDevice;
+
             // 检查设备是否已存在于集合中
             BleDeviceInfo? existingDevice = null;
-            foreach (var device in DiscoveredDevices)
+            int existingIndex = -1;
+
+            for (int i = 0; i < DiscoveredDevices.Count; i++)
             {
-                if (device.Id == deviceInfo.Id)
+                if (DiscoveredDevices[i].Id == deviceInfo.Id)
                 {
-                    existingDevice = device;
+                    existingDevice = DiscoveredDevices[i];
+                    existingIndex = i;
                     break;
                 }
             }
 
             if (existingDevice != null)
             {
-                // 更新现有设备
-                int index = DiscoveredDevices.IndexOf(existingDevice);
-                DiscoveredDevices[index] = deviceInfo;
+                // 保存当前设备的连接状态和服务信息
+                bool isConnected = existingDevice.IsConnected;
+                var services = existingDevice.Services;
+
+                // 检查是否是当前选中的设备
+                bool isSelectedDevice = (currentSelectedDevice != null && existingDevice.Id == currentSelectedDevice.Id);
+
+                // 创建更新后的设备对象
+                deviceInfo.IsConnected = isConnected;
+                if (isConnected)
+                {
+                    deviceInfo.Services = services;
+                }
+
+                // 如果是选中的设备，需要保持选中状态
+                if (isSelectedDevice)
+                {
+                    // 先保存当前选中的设备
+                    var tempSelected = SelectedDevice;
+
+                    // 更新设备
+                    DiscoveredDevices[existingIndex] = deviceInfo;
+
+                    // 恢复选中状态
+                    SelectedDevice = deviceInfo;
+                }
+                else
+                {
+                    // 如果不是选中的设备，直接更新
+                    DiscoveredDevices[existingIndex] = deviceInfo;
+                }
             }
             else
             {
