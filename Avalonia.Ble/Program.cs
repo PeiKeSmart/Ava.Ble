@@ -4,14 +4,13 @@ using System;
 
 namespace Avalonia.Ble;
 internal sealed class Program {
-    // Initialization code. Don't use any Avalonia, third-party APIs or any
-    // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
-    // yet and stuff might break.
+    // 初始化代码。在 AppMain 被调用之前，不要使用任何 Avalonia、第三方 API 或任何
+    // 依赖 SynchronizationContext 的代码：因为它们还没有初始化，可能会导致问题。
     [STAThread]
     public static void Main(string[] args) => BuildAvaloniaApp()
         .StartWithClassicDesktopLifetime(args);
 
-    // Avalonia configuration, don't remove; also used by visual designer.
+    // Avalonia 配置，不要移除；可视化设计器也会使用。
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()

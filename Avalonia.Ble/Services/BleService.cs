@@ -11,25 +11,55 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 
 namespace Avalonia.Ble.Services;
 
+/// <summary>
+/// 提供蓝牙低功耗 (BLE) 服务。
+/// </summary>
 public class BleService {
     private BluetoothLEAdvertisementWatcher? _watcher;
     private readonly Dictionary<string, BleDeviceInfo> _deviceCache = new();
     private CancellationTokenSource? _scanCancellationTokenSource;
 
+    /// <summary>
+    /// 当发现新设备时触发。
+    /// </summary>
     public event EventHandler<BleDeviceInfo>? DeviceDiscovered;
+    /// <summary>
+    /// 当扫描状态改变时触发。
+    /// </summary>
     public event EventHandler<string>? ScanStatusChanged;
+    /// <summary>
+    /// 当发生错误时触发。
+    /// </summary>
     public event EventHandler<string>? ErrorOccurred;
+    /// <summary>
+    /// 当设备连接时触发。
+    /// </summary>
     public event EventHandler<BleDeviceInfo>? DeviceConnected;
+    /// <summary>
+    /// 当设备断开连接时触发。
+    /// </summary>
     public event EventHandler<BleDeviceInfo>? DeviceDisconnected;
+    /// <summary>
+    /// 当发现服务时触发。
+    /// </summary>
     public event EventHandler<BleServiceInfo>? ServiceDiscovered;
 
+    /// <summary>
+    /// 获取一个值，该值指示当前是否正在扫描设备。
+    /// </summary>
     public bool IsScanning => _watcher?.Status == BluetoothLEAdvertisementWatcherStatus.Started;
 
+    /// <summary>
+    /// 初始化 BleService 类的新实例。
+    /// </summary>
     public BleService()
     {
         InitializeWatcher();
     }
 
+    /// <summary>
+    /// 初始化蓝牙 LE 广播观察者。
+    /// </summary>
     private void InitializeWatcher()
     {
         _watcher = new BluetoothLEAdvertisementWatcher
@@ -41,6 +71,9 @@ public class BleService {
         _watcher.Stopped += OnWatcherStopped;
     }
 
+    /// <summary>
+    /// 开始扫描 BLE 设备。
+    /// </summary>
     public void StartScan()
     {
         try
@@ -62,6 +95,9 @@ public class BleService {
         }
     }
 
+    /// <summary>
+    /// 停止扫描 BLE 设备。
+    /// </summary>
     public void StopScan()
     {
         try
@@ -79,6 +115,11 @@ public class BleService {
         }
     }
 
+    /// <summary>
+    /// 处理接收到的蓝牙 LE 广播。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">事件参数。</param>
     private async void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
     {
         try
@@ -87,20 +128,20 @@ public class BleService {
 
             if (_deviceCache.ContainsKey(deviceId))
             {
-                // Update existing device info
+                // 更新现有设备信息
                 _deviceCache[deviceId].Rssi = args.RawSignalStrengthInDBm;
                 _deviceCache[deviceId].LastSeen = DateTime.Now;
                 return;
             }
 
-            // Get device name
+            // 获取设备名称
             string deviceName = args.Advertisement.LocalName;
             if (string.IsNullOrEmpty(deviceName))
             {
                 deviceName = "未知设备";
             }
 
-            // Create new device info
+            // 创建新的设备信息
             var deviceInfo = new BleDeviceInfo
             {
                 Id = deviceId,
@@ -110,10 +151,10 @@ public class BleService {
                 LastSeen = DateTime.Now
             };
 
-            // Try to get more device information
+            // 尝试获取更多设备信息
             await GetDeviceInfoAsync(deviceInfo, args.BluetoothAddress);
 
-            // Add to cache and notify
+            // 添加到缓存并通知
             _deviceCache[deviceId] = deviceInfo;
             DeviceDiscovered?.Invoke(this, deviceInfo);
         }
@@ -123,6 +164,11 @@ public class BleService {
         }
     }
 
+    /// <summary>
+    /// 异步获取设备的详细信息。
+    /// </summary>
+    /// <param name="deviceInfo">要填充的设备信息对象。</param>
+    /// <param name="bluetoothAddress">设备的蓝牙地址。</param>
     private async Task GetDeviceInfoAsync(BleDeviceInfo deviceInfo, ulong bluetoothAddress)
     {
         try
@@ -137,7 +183,7 @@ public class BleService {
                 deviceInfo.Name = string.IsNullOrEmpty(device.Name) ? deviceInfo.Name : device.Name;
                 deviceInfo.IsConnectable = true;
 
-                // Get services if connected
+                // 如果已连接，则获取服务
                 if (device.ConnectionStatus == BluetoothConnectionStatus.Connected)
                 {
                     var services = await device.GetGattServicesAsync();
@@ -157,6 +203,11 @@ public class BleService {
         }
     }
 
+    /// <summary>
+    /// 处理观察者停止事件。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">事件参数。</param>
     private void OnWatcherStopped(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementWatcherStoppedEventArgs args)
     {
         if (args.Error != BluetoothError.Success)
@@ -166,7 +217,11 @@ public class BleService {
         }
     }
 
-    // 连接到设备
+    /// <summary>
+    /// 异步连接到指定的 BLE 设备。
+    /// </summary>
+    /// <param name="deviceInfo">要连接的设备的信息。</param>
+    /// <returns>如果连接成功，则为 true；否则为 false。</returns>
     public async Task<bool> ConnectToDeviceAsync(BleDeviceInfo deviceInfo)
     {
         try
@@ -266,7 +321,10 @@ public class BleService {
         }
     }
 
-    // 断开连接
+    /// <summary>
+    /// 断开与指定 BLE 设备的连接。
+    /// </summary>
+    /// <param name="deviceInfo">要断开连接的设备的信息。</param>
     public void DisconnectDevice(BleDeviceInfo deviceInfo)
     {
         try
@@ -283,7 +341,11 @@ public class BleService {
         }
     }
 
-    // 获取服务名称（可以根据标准UUID添加更多已知服务）
+    /// <summary>
+    /// 根据 UUID 获取已知的服务名称。
+    /// </summary>
+    /// <param name="uuid">服务的 UUID。</param>
+    /// <returns>服务名称，如果未知则为空字符串。</returns>
     private string GetServiceName(Guid uuid)
     {
         switch (uuid.ToString().ToUpper())
@@ -298,7 +360,11 @@ public class BleService {
         }
     }
 
-    // 获取特征名称（可以根据标准UUID添加更多已知特征）
+    /// <summary>
+    /// 根据 UUID 获取已知的特征名称。
+    /// </summary>
+    /// <param name="uuid">特征的 UUID。</param>
+    /// <returns>特征名称，如果未知则为空字符串。</returns>
     private string GetCharacteristicName(Guid uuid)
     {
         switch (uuid.ToString().ToUpper())
@@ -318,41 +384,131 @@ public class BleService {
     }
 }
 
+/// <summary>
+/// 表示 BLE 设备的信息。
+/// </summary>
 public class BleDeviceInfo {
+    /// <summary>
+    /// 获取或设置设备 ID。
+    /// </summary>
     public string Id { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置设备名称。
+    /// </summary>
     public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置设备的蓝牙地址。
+    /// </summary>
     public ulong Address { get; set; }
+    /// <summary>
+    /// 获取或设置设备的接收信号强度指示 (RSSI)。
+    /// </summary>
     public short Rssi { get; set; }
+    /// <summary>
+    /// 获取或设置上次看到设备的时间。
+    /// </summary>
     public DateTime LastSeen { get; set; }
+    /// <summary>
+    /// 获取或设置一个值，该值指示设备是否可连接。
+    /// </summary>
     public bool IsConnectable { get; set; }
+    /// <summary>
+    /// 获取或设置设备的服务数量。
+    /// </summary>
     public int ServiceCount { get; set; }
+    /// <summary>
+    /// 获取或设置一个值，该值指示设备当前是否已连接。
+    /// </summary>
     public bool IsConnected { get; set; }
+    /// <summary>
+    /// 获取或设置设备的服务列表。
+    /// </summary>
     public List<BleServiceInfo> Services { get; set; } = new List<BleServiceInfo>();
+    /// <summary>
+    /// 获取设备的连接状态。
+    /// </summary>
     public string ConnectionStatus => IsConnected ? "已连接" : "未连接";
 
+    /// <summary>
+    /// 获取设备的显示名称。
+    /// </summary>
     public string DisplayName => string.IsNullOrEmpty(Name) ? Id : $"{Name} ({Id})";
+    /// <summary>
+    /// 获取设备的信号强度。
+    /// </summary>
     public string SignalStrength => $"{Rssi} dBm";
+    /// <summary>
+    /// 获取上次看到设备的时间。
+    /// </summary>
     public string LastSeenTime => LastSeen.ToString("HH:mm:ss");
 }
 
+/// <summary>
+/// 表示 BLE 服务的信息。
+/// </summary>
 public class BleServiceInfo {
+    /// <summary>
+    /// 获取或设置服务 ID。
+    /// </summary>
     public string Id { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置服务的 UUID。
+    /// </summary>
     public string Uuid { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置服务名称。
+    /// </summary>
     public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置服务的特征列表。
+    /// </summary>
     public List<BleCharacteristicInfo> Characteristics { get; set; } = new List<BleCharacteristicInfo>();
 
+    /// <summary>
+    /// 获取服务的显示名称。
+    /// </summary>
     public string DisplayName => string.IsNullOrEmpty(Name) ? Uuid : $"{Name} ({Uuid})";
 }
 
+/// <summary>
+/// 表示 BLE 特征的信息。
+/// </summary>
 public class BleCharacteristicInfo {
+    /// <summary>
+    /// 获取或设置特征 ID。
+    /// </summary>
     public string Id { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置特征的 UUID。
+    /// </summary>
     public string Uuid { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置特征名称。
+    /// </summary>
     public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// 获取或设置一个值，该值指示特征是否可读。
+    /// </summary>
     public bool CanRead { get; set; }
+    /// <summary>
+    /// 获取或设置一个值，该值指示特征是否可写。
+    /// </summary>
     public bool CanWrite { get; set; }
+    /// <summary>
+    /// 获取或设置一个值，该值指示特征是否可以通知。
+    /// </summary>
     public bool CanNotify { get; set; }
+    /// <summary>
+    /// 获取或设置特征的值。
+    /// </summary>
     public string Value { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 获取特征的显示名称。
+    /// </summary>
     public string DisplayName => string.IsNullOrEmpty(Name) ? Uuid : $"{Name} ({Uuid})";
+    /// <summary>
+    /// 获取特征的属性。
+    /// </summary>
     public string Properties => $"{(CanRead ? "读 " : "")}{(CanWrite ? "写 " : "")}{(CanNotify ? "通知" : "")}";
 }
