@@ -69,7 +69,7 @@ public class BleService {
             ScanningMode = BluetoothLEScanningMode.Active,
             SignalStrengthFilter = new BluetoothSignalStrengthFilter
             {
-                SamplingInterval = TimeSpan.FromMilliseconds(1000),
+                SamplingInterval = TimeSpan.FromMilliseconds(100),
                 // 不设置信号强度阈值，以接收所有设备
             }
         };
