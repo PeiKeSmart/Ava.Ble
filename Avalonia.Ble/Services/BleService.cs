@@ -142,8 +142,6 @@ public class BleService {
                 deviceName = "未知设备";
             }
 
-            XTrace.WriteLine($"获取设备：{deviceName}:{deviceId}");
-
             // 用于存储当前接收到的所有解析后的广播数据段
             List<BleAdvertisementData> currentReceivedAdvertisementDataList = new List<BleAdvertisementData>();
 
@@ -266,6 +264,12 @@ public class BleService {
                 }
                 existingDevice.RawAdvertisementData = newRawData.Trim();
 
+                // Attempt to parse version for HLK-LD2410 devices
+                if (existingDevice.Name != null && existingDevice.Name.Contains("HLK-LD2410"))
+                {
+                    existingDevice.Version = TryParseHlkLd2410Version(existingDevice.AdvertisementData);
+                }
+
                 DeviceDiscovered?.Invoke(this, existingDevice);
                 return;
             }
@@ -289,6 +293,12 @@ public class BleService {
                 RawAdvertisementData = initialRawData.Trim()
             };
 
+            // Attempt to parse version for HLK-LD2410 devices
+            if (deviceInfo.Name != null && deviceInfo.Name.Contains("HLK-LD2410"))
+            {
+                deviceInfo.Version = TryParseHlkLd2410Version(deviceInfo.AdvertisementData);
+            }
+
             // 尝试获取更多设备信息
             await GetDeviceInfoAsync(deviceInfo, args.BluetoothAddress);
 
@@ -300,6 +310,37 @@ public class BleService {
         {
             ErrorOccurred?.Invoke(this, $"处理设备广播时出错: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 尝试为 HLK-LD2410 设备解析版本号。
+    /// </summary>
+    /// <param name="advertisementDataList">设备的广播数据列表。</param>
+    /// <returns>解析出的版本号字符串，如果无法解析则返回 null。</returns>
+    private string? TryParseHlkLd2410Version(List<BleAdvertisementData> advertisementDataList)
+    {
+        foreach (var ad in advertisementDataList)
+        {
+            if (ad.Type == 0xFF) // Manufacturer Specific Data
+            {
+                if (ad.Value != null && ad.Value.Length == 15)
+                {
+                    // Extract the 6 bytes for version starting from the 3rd byte of Value
+                    // (0-indexed: Value[2] to Value[7])
+                    byte ext1 = ad.Value[2]; // Byte for B1 role (e.g., 09)
+                    byte ext2 = ad.Value[3]; // Byte for B2 role (e.g., 02)
+                    byte ext3 = ad.Value[4]; // Byte for B3 role (e.g., 17)
+                    byte ext4 = ad.Value[5]; // Byte for B4 role (e.g., 09)
+                    byte ext5 = ad.Value[6]; // Byte for B5 role (e.g., 05)
+                    byte ext6 = ad.Value[7]; // Byte for B6 role (e.g., 25)
+
+                    // Format: {B2_dec}.{B1_dec:D2}.{B6_hex:X2}{B5_hex:X2}{B4_hex:X2}{B3_hex:X2}
+                    // Example: input 09 02 17 09 05 25 (as ext1 to ext6) -> 2.09.25050917
+                    return $"{ext2}.{ext1:D2}.{ext6:X2}{ext5:X2}{ext4:X2}{ext3:X2}";
+                }
+            }
+        }
+        return null; // Version not found or data not matching criteria
     }
 
     /// <summary>
@@ -537,6 +578,7 @@ public class BleDeviceInfo : INotifyPropertyChanged {
     private List<BleServiceInfo> _services = new List<BleServiceInfo>();
     private List<BleAdvertisementData> _advertisementData = new List<BleAdvertisementData>();
     private string _rawAdvertisementData = string.Empty;
+    private string? _version; // Added Version property
 
     /// <summary>
     /// 获取或设置设备 ID。
@@ -709,6 +751,22 @@ public class BleDeviceInfo : INotifyPropertyChanged {
             {
                 _rawAdvertisementData = value;
                 OnPropertyChanged(nameof(RawAdvertisementData));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 获取或设置设备解析出的版本号。
+    /// </summary>
+    public string? Version
+    {
+        get => _version;
+        set
+        {
+            if (_version != value)
+            {
+                _version = value;
+                OnPropertyChanged(nameof(Version));
             }
         }
     }

@@ -235,14 +235,24 @@ public partial class MainWindowViewModel : ViewModelBase
             string filterText = DeviceNameFilter.Trim();
             foreach (var device in sourceListForFilter)
             {
-                bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
-                // 如果设备名称为空或“未知设备”，并且过滤器文本为“未知设备”，则匹配
-                bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
-                                            filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
-                
-                if (nameMatches || isUnknownDeviceMatch)
+                // 规则系统：如果设备名称包含 "HLK-LD2410"，则只显示该设备
+                if (filterText.Equals("HLK-LD2410", StringComparison.OrdinalIgnoreCase))
                 {
-                    devicesThatShouldBeInFilteredView.Add(device);
+                    if (device.Name != null && device.Name.Contains("HLK-LD2410", StringComparison.OrdinalIgnoreCase))
+                    {
+                        devicesThatShouldBeInFilteredView.Add(device);
+                    }
+                }
+                else // 其他过滤规则（如果需要可以扩展）
+                {
+                    bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
+                    bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
+                                                filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
+
+                    if (nameMatches || isUnknownDeviceMatch)
+                    {
+                        devicesThatShouldBeInFilteredView.Add(device);
+                    }
                 }
             }
         }
@@ -351,6 +361,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     existingDeviceInMasterList.Rssi = deviceInfoFromEvent.Rssi;
                     existingDeviceInMasterList.LastSeen = deviceInfoFromEvent.LastSeen;
                     existingDeviceInMasterList.IsConnectable = deviceInfoFromEvent.IsConnectable;
+                    existingDeviceInMasterList.Version = deviceInfoFromEvent.Version; // Update Version property
                     
                     // BleService should provide consolidated AdvertisementData.
                     // BleDeviceInfo.AdvertisementData setter calls OnPropertyChanged.
@@ -373,7 +384,8 @@ public partial class MainWindowViewModel : ViewModelBase
                         ServiceCount = deviceInfoFromEvent.ServiceCount,
                         IsConnected = deviceInfoFromEvent.IsConnected,
                         AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData),
-                        RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData
+                        RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData,
+                        Version = deviceInfoFromEvent.Version // Add Version property
                         // Services list is initially empty
                     };
                     _discoveredDevices.Add(newDeviceToAdd);
