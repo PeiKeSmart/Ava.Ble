@@ -23,7 +23,7 @@
 		</StackPanel>
 
 		<!--<DataGrid Grid.Row="1"
-                  Items="{Binding DiscoveredDevices}"
+                  ItemSource="{Binding DiscoveredDevices}"
                   SelectedItem="{Binding SelectedDevice}"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
