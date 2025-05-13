@@ -3,7 +3,8 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:Avalonia.Ble.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+        xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
         x:Class="Avalonia.Ble.Views.RuleManagementWindow"
         x:DataType="vm:RuleManagementViewModel"
         Title="规则管理"
@@ -13,8 +14,19 @@
         <vm:RuleManagementViewModel/>
     </Design.DataContext>
 
-    <Grid Margin="10">
-        <TextBlock Text="规则管理窗体内容待实现" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-        <!-- 这里将放置规则管理的具体UI元素，例如规则列表、添加/编辑/删除按钮等 -->
+    <Grid RowDefinitions="*,Auto" Margin="10">
+        <ae:TextEditor Grid.Row="0"
+                       x:Name="RuleTextEditor"
+                       FontFamily="Cascadia Mono, Consolas, monospace"
+                       FontSize="14"
+                       ShowLineNumbers="True"
+                       SyntaxHighlighting="XML" 
+                       Margin="0,0,0,10"/>
+                       <!-- TODO: 后续可以考虑为规则创建自定义的语法高亮 -->
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="加载规则" Command="{Binding LoadRulesCommand}"/>
+            <Button Content="保存规则" Command="{Binding SaveRulesCommand}"/>
+        </StackPanel>
     </Grid>
 </Window>

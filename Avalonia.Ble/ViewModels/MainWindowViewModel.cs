@@ -5,11 +5,12 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace Avalonia.Ble.ViewModels;
@@ -20,6 +21,7 @@ namespace Avalonia.Ble.ViewModels;
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly BleService _bleService;
+    private RuleManagementViewModel? _ruleManagementViewModel;
 
     // 保存DataGrid的滚动位置
     private double _scrollPosition = 0;
@@ -93,13 +95,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void OpenRuleManagement()
     {
+        _ruleManagementViewModel = new RuleManagementViewModel();
         var ruleManagementWindow = new RuleManagementWindow
         {
-            DataContext = new RuleManagementViewModel()
+            DataContext = _ruleManagementViewModel
         };
-        // 如果需要，可以将主窗口作为所有者传递
-        // ruleManagementWindow.ShowDialog(GetMainWindow());
         ruleManagementWindow.Show();
+
+        ruleManagementWindow.Closed += (s, e) => ApplyFilter();
     }
 
     /// <summary>
@@ -110,7 +113,6 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (value != null)
         {
-            // 当选择设备变化时，更新服务列表
             SelectedDeviceServices.Clear();
             foreach (var service in value.Services)
             {
@@ -122,7 +124,6 @@ public partial class MainWindowViewModel : ViewModelBase
             SelectedDeviceServices.Clear();
         }
 
-        // 更新连接命令的可用性
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
     }
@@ -135,7 +136,6 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (value != null)
         {
-            // 当选择服务变化时，更新特征列表
             SelectedServiceCharacteristics.Clear();
             foreach (var characteristic in value.Characteristics)
             {
@@ -156,20 +156,16 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         StatusMessage = "正在扫描设备...";
 
-        // 在UI线程上清空集合
         Dispatcher.UIThread.Post(() =>
         {
-            // 先清空选中的设备，避免引用已删除的对象
             SelectedDevice = null;
 
-            // 创建新的空集合替换原集合
             lock (_discoveredDevices)
             {
-                _discoveredDevices = new ObservableCollection<BleDeviceInfo>();
+                _discoveredDevices = [];
             }
 
-            // 创建新的空集合替换过滤后的集合
-            FilteredDevices = new ObservableCollection<BleDeviceInfo>();
+            FilteredDevices = [];
         });
 
         _bleService.StartScan();
@@ -229,62 +225,98 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private void ApplyFilter()
     {
-        string? selectedDeviceId = SelectedDevice?.Id; // 保留选择
+        string? selectedDeviceId = SelectedDevice?.Id;
 
         List<BleDeviceInfo> sourceListForFilter;
-        lock (_discoveredDevices) // 安全地迭代 _discoveredDevices
+        lock (_discoveredDevices)
         {
-            sourceListForFilter = new List<BleDeviceInfo>(_discoveredDevices); // 使用快照进行操作
+            sourceListForFilter = [.. _discoveredDevices];
         }
 
-        List<BleDeviceInfo> devicesThatShouldBeInFilteredView = new List<BleDeviceInfo>();
-        if (!IsFilterEnabled || string.IsNullOrWhiteSpace(DeviceNameFilter))
+        List<BleDeviceInfo> devicesThatShouldBeInFilteredView = [];
+
+        if (IsFilterEnabled)
         {
-            devicesThatShouldBeInFilteredView.AddRange(sourceListForFilter);
-        }
-        else
-        {
-            string filterText = DeviceNameFilter.Trim();
-            foreach (var device in sourceListForFilter)
+            bool rulesApplied = false;
+            if (_ruleManagementViewModel != null)
             {
-                // TODO: 从 RuleManagementViewModel 获取并应用规则
-                // 移除旧的硬编码规则
-                bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
-                bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
-                                            filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
-
-                if (nameMatches || isUnknownDeviceMatch)
+                string rulesJson = _ruleManagementViewModel.GetCurrentRules();
+                if (!string.IsNullOrWhiteSpace(rulesJson))
                 {
-                    devicesThatShouldBeInFilteredView.Add(device);
+                    try
+                    {
+                        var parsedRules = JsonSerializer.Deserialize<RuleSet>(rulesJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (parsedRules?.Rules != null && parsedRules.Rules.Any())
+                        {
+                            foreach (var device in sourceListForFilter)
+                            {
+                                if (MatchesAllRules(device, parsedRules.Rules))
+                                {
+                                    devicesThatShouldBeInFilteredView.Add(device);
+                                }
+                            }
+                            rulesApplied = true;
+                        }
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        Console.WriteLine($"Error parsing rules JSON: {jsonEx.Message}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error applying rules: {ex.Message}");
+                    }
+                }
+            }
+
+            if (!rulesApplied)
+            {
+                if (string.IsNullOrWhiteSpace(DeviceNameFilter))
+                {
+                    devicesThatShouldBeInFilteredView.AddRange(sourceListForFilter);
+                }
+                else
+                {
+                    string filterText = DeviceNameFilter.Trim();
+                    foreach (var device in sourceListForFilter)
+                    {
+                        bool nameMatches = device.Name != null && device.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase);
+                        bool isUnknownDeviceMatch = (string.IsNullOrEmpty(device.Name) || device.Name == "未知设备") &&
+                                                    filterText.Equals("未知设备", StringComparison.OrdinalIgnoreCase);
+
+                        if (nameMatches || isUnknownDeviceMatch)
+                        {
+                            devicesThatShouldBeInFilteredView.Add(device);
+                        }
+                    }
                 }
             }
         }
+        else
+        {
+            devicesThatShouldBeInFilteredView.AddRange(sourceListForFilter);
+        }
 
-        // 将 FilteredDevices 与 devicesThatShouldBeInFilteredView 同步
-        // 这假设 devicesThatShouldBeInFilteredView 包含所需的顺序。
-
-        // 1. 从 FilteredDevices 中移除不再存在于 devicesThatShouldBeInFilteredView 中的项
         var itemsToRemove = FilteredDevices.Except(devicesThatShouldBeInFilteredView).ToList();
         foreach (var itemToRemove in itemsToRemove)
         {
             FilteredDevices.Remove(itemToRemove);
         }
 
-        // 2. 添加/移动项以匹配 devicesThatShouldBeInFilteredView 的顺序和内容
         for (int i = 0; i < devicesThatShouldBeInFilteredView.Count; i++)
         {
             var itemFromSource = devicesThatShouldBeInFilteredView[i];
             if (i >= FilteredDevices.Count)
             {
-                // 需要在末尾添加项
                 FilteredDevices.Add(itemFromSource);
             }
             else if (!ReferenceEquals(FilteredDevices[i], itemFromSource))
             {
-                // 此位置的项不同。检查 itemFromSource 是否已存在于 FilteredDevices 中的其他位置。
                 int existingIndexOfItemFromSource = -1;
-                for(int j = 0; j < FilteredDevices.Count; ++j) {
-                    if(ReferenceEquals(FilteredDevices[j], itemFromSource)) {
+                for (int j = 0; j < FilteredDevices.Count; ++j)
+                {
+                    if (ReferenceEquals(FilteredDevices[j], itemFromSource))
+                    {
                         existingIndexOfItemFromSource = j;
                         break;
                     }
@@ -292,34 +324,100 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 if (existingIndexOfItemFromSource != -1)
                 {
-                    // 项存在于 FilteredDevices 中的其他位置，将其移动到正确位置
                     FilteredDevices.Move(existingIndexOfItemFromSource, i);
                 }
                 else
                 {
-                    // 项根本不在 FilteredDevices 中，插入它
                     FilteredDevices.Insert(i, itemFromSource);
                 }
             }
-            // 如果 FilteredDevices[i] 已经是 itemFromSource，则它位于正确的位置。
         }
 
-        // 3. 如果在插入/移动后 FilteredDevices 比 devicesThatShouldBeInFilteredView 长，则修剪多余的项。
         while (FilteredDevices.Count > devicesThatShouldBeInFilteredView.Count)
         {
             FilteredDevices.RemoveAt(FilteredDevices.Count - 1);
         }
 
-        // 如果可能，恢复选择
         if (selectedDeviceId != null)
         {
             SelectedDevice = FilteredDevices.FirstOrDefault(d => d.Id == selectedDeviceId);
         }
         else
         {
-            SelectedDevice = null; // 或者根据需要选择第一项
+            SelectedDevice = null;
         }
-        // 不再需要恢复滚动位置的注释，因为正确的集合管理应该能解决此问题。
+    }
+
+    private bool MatchesAllRules(BleDeviceInfo device, IEnumerable<Rule> rules)
+    {
+        foreach (var rule in rules)
+        {
+            if (!MatchesRule(device, rule))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private bool MatchesRule(BleDeviceInfo device, Rule rule)
+    {
+        string? propertyValue = null;
+        switch (rule.Property?.ToLowerInvariant())
+        {
+            case "name":
+                propertyValue = device.Name;
+                break;
+            case "id":
+                propertyValue = device.Id;
+                break;
+            case "address":
+                propertyValue = device.Address.ToString();
+                break;
+            case "version":
+                propertyValue = device.Version;
+                break;
+            case "rssi":
+                if (int.TryParse(rule.Value?.ToString(), out int ruleRssiValue))
+                {
+                    switch (rule.Operator?.ToLowerInvariant())
+                    {
+                        case ">": return device.Rssi > ruleRssiValue;
+                        case "<": return device.Rssi < ruleRssiValue;
+                        case ">=": return device.Rssi >= ruleRssiValue;
+                        case "<=": return device.Rssi <= ruleRssiValue;
+                        case "==": return device.Rssi == ruleRssiValue;
+                        default: return false;
+                    }
+                }
+                return false;
+        }
+
+        if (propertyValue == null && rule.Property?.ToLowerInvariant() != "name")
+        {
+            if (rule.Operator?.ToLowerInvariant() == "isnullorempty") return string.IsNullOrEmpty(propertyValue);
+            if (rule.Operator?.ToLowerInvariant() == "isnotnullorempty") return !string.IsNullOrEmpty(propertyValue);
+        }
+
+        string ruleValueString = rule.Value?.ToString() ?? string.Empty;
+
+        switch (rule.Operator?.ToLowerInvariant())
+        {
+            case "contains":
+                return propertyValue?.Contains(ruleValueString, StringComparison.OrdinalIgnoreCase) ?? false;
+            case "equals":
+                return propertyValue?.Equals(ruleValueString, StringComparison.OrdinalIgnoreCase) ?? false;
+            case "startswith":
+                return propertyValue?.StartsWith(ruleValueString, StringComparison.OrdinalIgnoreCase) ?? false;
+            case "endswith":
+                return propertyValue?.EndsWith(ruleValueString, StringComparison.OrdinalIgnoreCase) ?? false;
+            case "isnullorempty":
+                return string.IsNullOrEmpty(propertyValue);
+            case "isnotnullorempty":
+                return !string.IsNullOrEmpty(propertyValue);
+            default:
+                return false;
+        }
     }
 
     /// <summary>
@@ -332,50 +430,38 @@ public partial class MainWindowViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             BleDeviceInfo? existingDeviceInMasterList;
-            lock (_discoveredDevices) // _discoveredDevices is ObservableCollection<BleDeviceInfo>
+            lock (_discoveredDevices)
             {
                 existingDeviceInMasterList = _discoveredDevices.FirstOrDefault(d => d.Id == deviceInfoFromEvent.Id);
 
                 if (existingDeviceInMasterList != null)
                 {
-                    // Update existing instance's properties
                     string newNameFromEvent = deviceInfoFromEvent.Name;
 
                     if (!string.IsNullOrEmpty(newNameFromEvent) && newNameFromEvent != "未知设备")
                     {
-                        // Event brings a valid, specific name. Update if different.
                         if (existingDeviceInMasterList.Name != newNameFromEvent)
                         {
-                             existingDeviceInMasterList.Name = newNameFromEvent;
+                            existingDeviceInMasterList.Name = newNameFromEvent;
                         }
                     }
                     else if (string.IsNullOrEmpty(existingDeviceInMasterList.Name) || existingDeviceInMasterList.Name == "未知设备")
                     {
-                        // Event name is non-specific (null, empty, or "未知设备")
-                        // AND current name is also non-specific (null, empty, or "未知设备").
-                        // Ensure it's "未知设备". Avoid redundant assignments if already "未知设备".
-                        if (existingDeviceInMasterList.Name != "未知设备") 
+                        if (existingDeviceInMasterList.Name != "未知设备")
                         {
-                             existingDeviceInMasterList.Name = "未知设备";
+                            existingDeviceInMasterList.Name = "未知设备";
                         }
                     }
-                    // If event name is non-specific but current name is specific, do nothing (preserve the good name).
 
                     existingDeviceInMasterList.Rssi = deviceInfoFromEvent.Rssi;
                     existingDeviceInMasterList.LastSeen = deviceInfoFromEvent.LastSeen;
                     existingDeviceInMasterList.IsConnectable = deviceInfoFromEvent.IsConnectable;
-                    existingDeviceInMasterList.Version = deviceInfoFromEvent.Version; // Update Version property
-                    
-                    // BleService should provide consolidated AdvertisementData.
-                    // BleDeviceInfo.AdvertisementData setter calls OnPropertyChanged.
+                    existingDeviceInMasterList.Version = deviceInfoFromEvent.Version;
                     existingDeviceInMasterList.AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData);
                     existingDeviceInMasterList.RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData;
-                    // ServiceCount and IsConnected are typically updated upon connection.
                 }
                 else
                 {
-                    // Device not found, add new BleDeviceInfo instance.
-                    // Ensure name is "未知设备" if not a valid specific name from the event.
                     var newDeviceToAdd = new BleDeviceInfo
                     {
                         Id = deviceInfoFromEvent.Id,
@@ -388,14 +474,11 @@ public partial class MainWindowViewModel : ViewModelBase
                         IsConnected = deviceInfoFromEvent.IsConnected,
                         AdvertisementData = new List<BleAdvertisementData>(deviceInfoFromEvent.AdvertisementData),
                         RawAdvertisementData = deviceInfoFromEvent.RawAdvertisementData,
-                        Version = deviceInfoFromEvent.Version // Add Version property
-                        // Services list is initially empty
+                        Version = deviceInfoFromEvent.Version
                     };
                     _discoveredDevices.Add(newDeviceToAdd);
                 }
             }
-            // _discoveredDevices has been updated in-place (item added or properties of existing item changed).
-            // ApplyFilter will use these stable instances.
             ApplyFilter();
         });
     }
@@ -435,10 +518,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(() =>
         {
-            // 更新UI
             IsConnecting = false;
 
-            // 如果连接的设备是当前选中的设备，更新服务列表
             if (SelectedDevice != null && SelectedDevice.Id == deviceInfo.Id)
             {
                 SelectedDeviceServices.Clear();
@@ -448,7 +529,6 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
             }
 
-            // 更新命令状态
             ConnectCommand.NotifyCanExecuteChanged();
             DisconnectCommand.NotifyCanExecuteChanged();
         });
@@ -463,13 +543,11 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         Dispatcher.UIThread.Post(() =>
         {
-            // 更新UI
             if (SelectedDevice != null && SelectedDevice.Id == deviceInfo.Id)
             {
                 SelectedDeviceServices.Clear();
             }
 
-            // 更新命令状态
             ConnectCommand.NotifyCanExecuteChanged();
             DisconnectCommand.NotifyCanExecuteChanged();
         });
@@ -482,8 +560,6 @@ public partial class MainWindowViewModel : ViewModelBase
     /// <param name="serviceInfo">发现的服务信息。</param>
     private void OnServiceDiscovered(object? sender, BleServiceInfo serviceInfo)
     {
-        // 这个方法在连接过程中会被多次调用，但我们已经在OnDeviceConnected中更新了服务列表
-        // 所以这里不需要额外处理
     }
 
     /// <summary>
@@ -588,23 +664,31 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void ViewAdvertisementData(object? parameter)
     {
-        // 获取设备信息
         BleDeviceInfo? device = parameter as BleDeviceInfo ?? SelectedDevice;
         if (device == null) return;
 
-        // 检查设备是否有广播数据
         if (device.AdvertisementData == null || device.AdvertisementData.Count == 0)
         {
-            // 如果没有广播数据，显示提示信息
             StatusMessage = "该设备没有广播数据";
             return;
         }
 
-        // 创建并显示广播数据窗口
         var window = new AdvertisementDataWindow(device);
         if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
             window.ShowDialog(desktop.MainWindow!);
         }
     }
+}
+
+public class RuleSet
+{
+    public List<Rule>? Rules { get; set; }
+}
+
+public class Rule
+{
+    public string? Property { get; set; }
+    public string? Operator { get; set; }
+    public object? Value { get; set; }
 }
