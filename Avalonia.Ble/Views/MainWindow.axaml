@@ -18,8 +18,8 @@
 	<Grid RowDefinitions="Auto,*,Auto" Margin="10">
 		<StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
 			<Button Command="{Binding StartScanCommand}" IsEnabled="{Binding !IsScanning}" Content="开始扫描" />
-			<!--<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
-			<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />-->
+			<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
+			<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
 		</StackPanel>
 
 		<!--<DataGrid Grid.Row="1"
