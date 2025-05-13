@@ -20,6 +20,10 @@
             <ComboBox x:Name="SyntaxModeCombo"
                       MinWidth="150"
                       VerticalAlignment="Center"/>
+            <TextBlock Text="选择主题:" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            <ComboBox x:Name="ThemeCombo"
+                      MinWidth="150"
+                      VerticalAlignment="Center"/>
         </StackPanel>
 
         <ae:TextEditor Grid.Row="1"
