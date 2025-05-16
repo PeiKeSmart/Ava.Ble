@@ -2,6 +2,9 @@
 using Avalonia.Ble.Services;
 using Avalonia.Ble.Views;
 using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -667,6 +670,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // 如果正在扫描，先停止扫描
+            bool wasScanningBeforeConnect = IsScanning;
+            if (wasScanningBeforeConnect)
+            {
+                StatusMessage = "连接前停止扫描...";
+                _bleService.StopScan();
+                IsScanning = false;
+            }
+
             IsConnecting = true;
             StatusMessage = $"正在连接到设备: {SelectedDevice.Name}...";
 
@@ -675,6 +687,20 @@ public partial class MainWindowViewModel : ViewModelBase
             if (!result)
             {
                 StatusMessage = $"连接设备失败: {SelectedDevice.Name}";
+
+                // 如果连接失败且之前在扫描，询问是否要重新开始扫描
+                if (wasScanningBeforeConnect && Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                {
+                    var dialogResult = await ShowYesNoDialog(desktop.MainWindow!, "连接失败", "连接设备失败。是否要重新开始扫描？");
+                    if (dialogResult)
+                    {
+                        StartScan();
+                    }
+                }
+            }
+            else
+            {
+                StatusMessage = $"已连接到设备: {SelectedDevice.Name}";
             }
         }
         catch (Exception ex)
@@ -703,11 +729,24 @@ public partial class MainWindowViewModel : ViewModelBase
     /// 断开与选定 BLE 设备的连接。
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
-    private void Disconnect()
+    private async Task DisconnectAsync()
     {
         if (SelectedDevice == null || !SelectedDevice.IsConnected) return;
 
         _bleService.DisconnectDevice(SelectedDevice);
+
+        // 等待设备状态更新
+        await Task.Delay(500);
+
+        // 询问用户是否要重新开始扫描
+        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var result = await ShowYesNoDialog(desktop.MainWindow!, "断开连接", "设备已断开连接。是否要重新开始扫描？");
+            if (result)
+            {
+                StartScan();
+            }
+        }
     }
 
     /// <summary>
@@ -773,6 +812,103 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             window.ShowDialog(desktop.MainWindow!);
         }
+    }
+
+    /// <summary>
+    /// 显示一个是/否对话框。
+    /// </summary>
+    /// <param name="parent">父窗口。</param>
+    /// <param name="title">对话框标题。</param>
+    /// <param name="message">对话框消息。</param>
+    /// <returns>如果用户选择"是"，则为 true；否则为 false。</returns>
+    private async Task<bool> ShowYesNoDialog(Window parent, string title, string message)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 400,
+            Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            SystemDecorations = SystemDecorations.Full,
+            Content = new Grid
+            {
+                RowDefinitions = new RowDefinitions("*, Auto"),
+                Margin = new Thickness(20),
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        [Grid.RowProperty] = 0
+                    },
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Spacing = 20,
+                        Margin = new Thickness(0, 20, 0, 0),
+                        [Grid.RowProperty] = 1,
+                        Children =
+                        {
+                            new Button
+                            {
+                                Content = "是",
+                                Width = 80,
+                                Height = 30,
+                                HorizontalContentAlignment = HorizontalAlignment.Center,
+                                [Button.IsDefaultProperty] = true
+                            },
+                            new Button
+                            {
+                                Content = "否",
+                                Width = 80,
+                                Height = 30,
+                                HorizontalContentAlignment = HorizontalAlignment.Center,
+                                [Button.IsCancelProperty] = true
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var tcs = new TaskCompletionSource<bool>();
+
+        if (dialog.Content is Grid grid && grid.Children[1] is StackPanel buttonPanel)
+        {
+            if (buttonPanel.Children[0] is Button yesButton)
+            {
+                yesButton.Click += (s, e) =>
+                {
+                    tcs.SetResult(true);
+                    dialog.Close();
+                };
+            }
+
+            if (buttonPanel.Children[1] is Button noButton)
+            {
+                noButton.Click += (s, e) =>
+                {
+                    tcs.SetResult(false);
+                    dialog.Close();
+                };
+            }
+        }
+
+        dialog.Closed += (s, e) =>
+        {
+            if (!tcs.Task.IsCompleted)
+            {
+                tcs.SetResult(false);
+            }
+        };
+
+        await dialog.ShowDialog(parent);
+        return await tcs.Task;
     }
 }
 
