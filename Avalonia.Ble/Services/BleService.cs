@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Avalonia.Threading;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -20,6 +21,8 @@ public class BleService {
     private BluetoothLEAdvertisementWatcher? _watcher;
     private readonly Dictionary<string, BleDeviceInfo> _deviceCache = new();
     private CancellationTokenSource? _scanCancellationTokenSource;
+    private DispatcherTimer? _cleanupTimer;
+    private int _deviceTimeoutSeconds = 0; // 默认为0，表示不自动清理
 
     /// <summary>
     /// 当发现新设备时触发。
@@ -45,6 +48,24 @@ public class BleService {
     /// 当发现服务时触发。
     /// </summary>
     public event EventHandler<BleServiceInfo>? ServiceDiscovered;
+    /// <summary>
+    /// 当设备因超时被移除时触发。
+    /// </summary>
+    public event EventHandler<string>? DeviceRemoved;
+
+    /// <summary>
+    /// 获取或设置设备超时时间（秒）。超过此时间未收到广播的设备将被自动移除。
+    /// 设置为0或负数表示不自动清理设备。
+    /// </summary>
+    public int DeviceTimeoutSeconds
+    {
+        get => _deviceTimeoutSeconds;
+        set
+        {
+            _deviceTimeoutSeconds = value;
+            UpdateCleanupTimer(); // 当超时时间改变时，更新定时器状态
+        }
+    }
 
     /// <summary>
     /// 获取一个值，该值指示当前是否正在扫描设备。
@@ -57,6 +78,83 @@ public class BleService {
     public BleService()
     {
         InitializeWatcher();
+        InitializeCleanupTimer();
+    }
+
+    /// <summary>
+    /// 初始化清理定时器。
+    /// </summary>
+    private void InitializeCleanupTimer()
+    {
+        _cleanupTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5) // 默认检查间隔为5秒
+        };
+        _cleanupTimer.Tick += CleanupExpiredDevices;
+
+        // 根据初始设置决定是否启动定时器
+        UpdateCleanupTimer();
+    }
+
+    /// <summary>
+    /// 根据超时设置更新清理定时器状态。
+    /// </summary>
+    private void UpdateCleanupTimer()
+    {
+        if (_cleanupTimer == null)
+            return;
+
+        if (DeviceTimeoutSeconds > 0)
+        {
+            // 如果超时时间大于0，启动定时器（如果尚未启动）
+            if (!_cleanupTimer.IsEnabled)
+                _cleanupTimer.Start();
+
+            // 根据超时时间调整检查间隔，但不超过5秒
+            _cleanupTimer.Interval = TimeSpan.FromSeconds(Math.Min(DeviceTimeoutSeconds / 2.0, 5));
+        }
+        else
+        {
+            // 如果超时时间为0或负数，停止定时器
+            if (_cleanupTimer.IsEnabled)
+                _cleanupTimer.Stop();
+        }
+    }
+
+    /// <summary>
+    /// 清理超时的设备。
+    /// </summary>
+    private void CleanupExpiredDevices(object? sender, EventArgs e)
+    {
+        if (DeviceTimeoutSeconds <= 0)
+            return; // 安全检查
+
+        var now = DateTime.Now;
+        var expiredDeviceIds = new List<string>();
+
+        // 找出所有过期的设备
+        foreach (var kvp in _deviceCache)
+        {
+            var timeSinceLastSeen = now - kvp.Value.LastSeen;
+            if (timeSinceLastSeen.TotalSeconds > DeviceTimeoutSeconds)
+            {
+                expiredDeviceIds.Add(kvp.Key);
+            }
+        }
+
+        // 移除过期设备
+        foreach (var deviceId in expiredDeviceIds)
+        {
+            _deviceCache.Remove(deviceId);
+            // 触发设备移除事件
+            DeviceRemoved?.Invoke(this, deviceId);
+        }
+
+        // 如果有设备被移除，记录日志
+        if (expiredDeviceIds.Count > 0)
+        {
+            XTrace.WriteLine($"已清理 {expiredDeviceIds.Count} 个超时设备（超时时间：{DeviceTimeoutSeconds}秒）");
+        }
     }
 
     /// <summary>

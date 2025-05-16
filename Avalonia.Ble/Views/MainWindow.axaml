@@ -23,6 +23,11 @@
 				<Button Command="{Binding StartScanCommand}" IsEnabled="{Binding !IsScanning}" Content="开始扫描" />
 				<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
 				<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
+				<StackPanel Orientation="Horizontal" Spacing="5" Margin="20,0,0,0">
+					<TextBlock Text="设备超时时间（秒）:" VerticalAlignment="Center" ToolTip.Tip="设置为0表示不自动清理设备" />
+					<NumericUpDown Value="{Binding DeviceTimeoutSeconds}" Minimum="0" Maximum="3600" Increment="5" Width="100"
+								   ToolTip.Tip="超过此时间未收到广播的设备将被自动移除，设置为0表示不自动清理" />
+				</StackPanel>
 			</StackPanel>
 
 			<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">

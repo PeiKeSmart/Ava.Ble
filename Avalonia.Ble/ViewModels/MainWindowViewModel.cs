@@ -53,6 +53,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isFilterEnabled = false;
 
     /// <summary>
+    /// 获取或设置设备超时时间（秒）。超过此时间未收到广播的设备将被自动移除。
+    /// 设置为0表示不自动清理设备。
+    /// </summary>
+    [ObservableProperty]
+    private int _deviceTimeoutSeconds = 0;
+
+    /// <summary>
     /// 获取过滤按钮文本。
     /// </summary>
     public string FilterButtonText => IsFilterEnabled ? "关闭过滤" : "开启过滤";
@@ -87,6 +94,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _bleService.DeviceConnected += OnDeviceConnected;
         _bleService.DeviceDisconnected += OnDeviceDisconnected;
         _bleService.ServiceDiscovered += OnServiceDiscovered;
+        _bleService.DeviceRemoved += OnDeviceRemoved;
 
         // 初始化过滤后的设备列表
         ApplyFilter();
@@ -218,6 +226,36 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ApplyFilter();
         OnPropertyChanged(nameof(FilterButtonText));
+    }
+
+    /// <summary>
+    /// 当设备超时时间更改时调用。
+    /// </summary>
+    /// <param name="value">新的超时时间（秒）。</param>
+    partial void OnDeviceTimeoutSecondsChanged(int value)
+    {
+        _bleService.DeviceTimeoutSeconds = value;
+    }
+
+    /// <summary>
+    /// 处理设备移除事件。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="deviceId">被移除的设备ID。</param>
+    private void OnDeviceRemoved(object? sender, string deviceId)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_discoveredDevices)
+            {
+                var deviceToRemove = _discoveredDevices.FirstOrDefault(d => d.Id == deviceId);
+                if (deviceToRemove != null)
+                {
+                    _discoveredDevices.Remove(deviceToRemove);
+                }
+            }
+            ApplyFilter();
+        });
     }
 
     /// <summary>
