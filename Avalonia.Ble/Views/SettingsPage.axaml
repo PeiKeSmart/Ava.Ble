@@ -1,0 +1,20 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Avalonia.Ble.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Avalonia.Ble.Views.SettingsPage"
+             x:DataType="vm:MainWindowViewModel">
+    <StackPanel Margin="20">
+        <TextBlock Text="设置" FontSize="24" FontWeight="Bold" Margin="0,0,0,20"/>
+        
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+            <TextBlock Text="设备超时时间（秒）:" VerticalAlignment="Center" Width="200"/>
+            <NumericUpDown Value="{Binding DeviceTimeoutSeconds}" Minimum="0" Maximum="3600" Increment="5" Width="150"/>
+            <TextBlock Text="设置为0表示不自动清理设备" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+        
+        <!-- 可以在这里添加更多设置项 -->
+    </StackPanel>
+</UserControl>

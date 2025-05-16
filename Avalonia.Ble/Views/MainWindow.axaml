@@ -3,6 +3,8 @@
         xmlns:vm="using:Avalonia.Ble.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="using:Avalonia.Ble.Views"
+        xmlns:models="using:Avalonia.Ble.Models"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
         x:Class="Avalonia.Ble.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -17,125 +19,69 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-	<Grid RowDefinitions="Auto,*,Auto" Margin="10">
-		<Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="0,0,0,10">
-			<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-				<Button Command="{Binding StartScanCommand}" IsEnabled="{Binding !IsScanning}" Content="开始扫描" />
-				<Button Command="{Binding StopScanCommand}" IsEnabled="{Binding IsScanning}" Content="停止扫描" />
-				<TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" />
-				<StackPanel Orientation="Horizontal" Spacing="5" Margin="20,0,0,0">
-					<TextBlock Text="设备超时时间（秒）:" VerticalAlignment="Center" ToolTip.Tip="设置为0表示不自动清理设备" />
-					<NumericUpDown Value="{Binding DeviceTimeoutSeconds}" Minimum="0" Maximum="3600" Increment="5" Width="100"
-								   ToolTip.Tip="超过此时间未收到广播的设备将被自动移除，设置为0表示不自动清理" />
-				</StackPanel>
-			</StackPanel>
+    <Window.Styles>
+        <!-- 菜单项样式 -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
 
-			<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-				<TextBlock Text="设备名称过滤:" VerticalAlignment="Center" />
-				<TextBox Text="{Binding DeviceNameFilter}" Width="150" Watermark="输入设备名称..." />
-				<CheckBox Content="启用过滤" IsChecked="{Binding IsFilterEnabled}" />
-				<Button Command="{Binding ToggleFilterCommand}" Content="{Binding FilterButtonText}" />
-				<Button Content="规则管理" Command="{Binding OpenRuleManagementCommand}" />
-			</StackPanel>
-		</Grid>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#0078D7" />
+        </Style>
+    </Window.Styles>
 
-		<DataGrid Grid.Row="1"
-                  Name="DevicesDataGrid"
-                  ItemsSource="{Binding FilteredDevices}"
-                  SelectedItem="{Binding SelectedDevice}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  GridLinesVisibility="All"
-                  BorderThickness="1"
-                  Margin="0,0,0,10"
-                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                  ScrollViewer.VerticalScrollBarVisibility="Auto">
-			<DataGrid.Columns>
-				<DataGridTextColumn Header="设备名称" Binding="{Binding Name}" Width="*" MinWidth="250" />
-				<DataGridTextColumn Header="设备ID" Binding="{Binding Id}" Width="*" MinWidth="150" />
-                <DataGridTextColumn Header="版本号" Binding="{Binding Version}" Width="150" />
-				<DataGridTextColumn Header="信号强度" Binding="{Binding SignalStrength}" Width="100" />
-				<DataGridTextColumn Header="最后发现时间" Binding="{Binding LastSeenTime}" Width="120" />
-				<DataGridCheckBoxColumn Header="可连接" Binding="{Binding IsConnectable}" Width="80" />
-				<DataGridTemplateColumn Header="操作" Width="100">
-					<DataGridTemplateColumn.CellTemplate>
-						<DataTemplate>
-							<Button Content="查看广播"
-									Command="{Binding $parent[DataGrid].DataContext.ViewAdvertisementDataCommand}"
-									CommandParameter="{Binding}"
-									HorizontalAlignment="Center"
-									VerticalAlignment="Center"
-									Margin="2"/>
-						</DataTemplate>
-					</DataGridTemplateColumn.CellTemplate>
-				</DataGridTemplateColumn>
-			</DataGrid.Columns>
-		</DataGrid>
+    <SplitView IsPaneOpen="{Binding IsPaneOpen}"
+               DisplayMode="CompactInline"
+               OpenPaneLength="200"
+               CompactPaneLength="50">
 
-		<Grid Grid.Row="2" RowDefinitions="Auto,*">
-			<!-- 设备详情 -->
-			<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
-				<StackPanel Grid.Column="0" Orientation="Vertical" Spacing="5">
-					<TextBlock Text="设备详情:" FontWeight="Bold" />
-					<StackPanel IsVisible="{Binding SelectedDevice, Converter={x:Static ObjectConverters.IsNotNull}}">
-						<TextBlock Text="{Binding SelectedDevice.DisplayName}" />
-						<TextBlock Text="{Binding SelectedDevice.SignalStrength, StringFormat='信号强度: {0}'}" />
-						<TextBlock Text="{Binding SelectedDevice.LastSeenTime, StringFormat='最后发现时间: {0}'}" />
-						<TextBlock Text="{Binding SelectedDevice.ServiceCount, StringFormat='服务数量: {0}'}" />
-						<TextBlock Text="{Binding SelectedDevice.ConnectionStatus, StringFormat='连接状态: {0}'}" />
-					</StackPanel>
-				</StackPanel>
+        <!-- 左侧菜单面板 -->
+        <SplitView.Pane>
+            <Grid RowDefinitions="Auto,*">
+                <!-- 菜单标题和切换按钮 -->
+                <Button Grid.Row="0"
+                        Command="{Binding ToggleMenuCommand}"
+                        HorizontalAlignment="Left"
+                        Margin="5"
+                        Background="Transparent"
+                        BorderThickness="0">
+                    <StackPanel Orientation="Horizontal">
+                        <PathIcon Data="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z" Width="24" Height="24" />
+                        <TextBlock Text="菜单"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   IsVisible="{Binding IsPaneOpen}"/>
+                    </StackPanel>
+                </Button>
 
-				<StackPanel Grid.Column="1" Orientation="Vertical" Spacing="5" IsVisible="{Binding SelectedDevice, Converter={x:Static ObjectConverters.IsNotNull}}">
-					<Button Command="{Binding ConnectCommand}"
-							IsEnabled="{Binding !SelectedDevice.IsConnected}"
-							Content="连接设备"
-							Width="100" />
-					<Button Command="{Binding DisconnectCommand}"
-							IsEnabled="{Binding SelectedDevice.IsConnected}"
-							Content="断开连接"
-							Width="100" />
-					<Button Command="{Binding ViewAdvertisementDataCommand}"
-							Content="查看广播"
-							Width="100" />
-				</StackPanel>
-			</Grid>
+                <!-- 菜单项列表 -->
+                <ListBox Grid.Row="1"
+                         ItemsSource="{Binding MenuItems}"
+                         SelectedItem="{Binding SelectedMenuItem}"
+                         Background="Transparent"
+                         Margin="0,10,0,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:AppMenuItem">
+                            <StackPanel Orientation="Horizontal">
+                                <PathIcon Data="{Binding Icon, Converter={StaticResource IconConverter}}" Width="24" Height="24" />
+                                <TextBlock Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           Margin="10,0,0,0"
+                                           IsVisible="{Binding $parent[SplitView].IsPaneOpen}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </SplitView.Pane>
 
-			<!-- 服务和特征 -->
-			<Grid Grid.Row="1" ColumnDefinitions="*,*" IsVisible="{Binding SelectedDevice.IsConnected}">
-				<!-- 服务列表 -->
-				<Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,5,0">
-					<TextBlock Grid.Row="0" Text="服务列表:" FontWeight="Bold" Margin="0,0,0,5" />
-					<ListBox Grid.Row="1"
-							 ItemsSource="{Binding SelectedDeviceServices}"
-							 SelectedItem="{Binding SelectedService}">
-						<ListBox.ItemTemplate>
-							<DataTemplate>
-								<TextBlock Text="{Binding DisplayName}" />
-							</DataTemplate>
-						</ListBox.ItemTemplate>
-					</ListBox>
-				</Grid>
-
-				<!-- 特征列表 -->
-				<Grid Grid.Column="1" RowDefinitions="Auto,*" Margin="5,0,0,0">
-					<TextBlock Grid.Row="0" Text="特征列表:" FontWeight="Bold" Margin="0,0,0,5" />
-					<ListBox Grid.Row="1"
-							 ItemsSource="{Binding SelectedServiceCharacteristics}"
-							 SelectedItem="{Binding SelectedCharacteristic}">
-						<ListBox.ItemTemplate>
-							<DataTemplate>
-								<StackPanel>
-									<TextBlock Text="{Binding DisplayName}" />
-									<TextBlock Text="{Binding Properties, StringFormat='属性: {0}'}" FontSize="11" />
-									<TextBlock Text="{Binding Value, StringFormat='值: {0}'}" FontSize="11" IsVisible="{Binding Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-								</StackPanel>
-							</DataTemplate>
-						</ListBox.ItemTemplate>
-					</ListBox>
-				</Grid>
-			</Grid>
-		</Grid>
-	</Grid>
-
+        <!-- 主内容区域 -->
+        <SplitView.Content>
+            <Grid>
+                <ContentControl Content="{Binding SelectedMenuItem.Type, Converter={StaticResource MenuItemToPageConverter}}" />
+            </Grid>
+        </SplitView.Content>
+    </SplitView>
 </Window>

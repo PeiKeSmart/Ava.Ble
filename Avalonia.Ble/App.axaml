@@ -2,12 +2,18 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Avalonia.Ble.App"
              xmlns:local="using:Avalonia.Ble"
+             xmlns:converters="using:Avalonia.Ble.Converters"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.DataTemplates>
         <local:ViewLocator/>
     </Application.DataTemplates>
+
+    <Application.Resources>
+        <converters:MenuItemToPageConverter x:Key="MenuItemToPageConverter"/>
+        <converters:IconConverter x:Key="IconConverter"/>
+    </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />

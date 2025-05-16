@@ -1,4 +1,5 @@
-﻿using Avalonia.Ble.Services;
+﻿using Avalonia.Ble.Models;
+using Avalonia.Ble.Services;
 using Avalonia.Ble.Views;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -83,6 +84,24 @@ public partial class MainWindowViewModel : ViewModelBase
     private BleCharacteristicInfo? _selectedCharacteristic;
 
     /// <summary>
+    /// 获取或设置菜单项集合。
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<AppMenuItem> _menuItems = [];
+
+    /// <summary>
+    /// 获取或设置选中的菜单项。
+    /// </summary>
+    [ObservableProperty]
+    private AppMenuItem? _selectedMenuItem;
+
+    /// <summary>
+    /// 获取或设置是否展开菜单。
+    /// </summary>
+    [ObservableProperty]
+    private bool _isPaneOpen = false;
+
+    /// <summary>
     /// 初始化 MainWindowViewModel 类的新实例。
     /// </summary>
     public MainWindowViewModel()
@@ -98,6 +117,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // 初始化过滤后的设备列表
         ApplyFilter();
+
+        // 初始化菜单项
+        InitializeMenuItems();
+    }
+
+    /// <summary>
+    /// 初始化菜单项。
+    /// </summary>
+    private void InitializeMenuItems()
+    {
+        MenuItems.Add(new AppMenuItem { Name = "设备扫描", Icon = "Search", Type = MenuItemType.DeviceScan });
+        MenuItems.Add(new AppMenuItem { Name = "设置", Icon = "Settings", Type = MenuItemType.Settings });
+        MenuItems.Add(new AppMenuItem { Name = "关于", Icon = "Info", Type = MenuItemType.About });
+
+        // 默认选中第一个菜单项
+        SelectedMenuItem = MenuItems.FirstOrDefault();
     }
 
     [RelayCommand]
@@ -235,6 +270,28 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnDeviceTimeoutSecondsChanged(int value)
     {
         _bleService.DeviceTimeoutSeconds = value;
+    }
+
+    /// <summary>
+    /// 当选中的菜单项更改时调用。
+    /// </summary>
+    /// <param name="value">新的选中菜单项。</param>
+    partial void OnSelectedMenuItemChanged(AppMenuItem? value)
+    {
+        // 这里可以根据选中的菜单项类型执行相应的操作
+        if (value != null)
+        {
+            // 如果需要，可以在这里添加切换页面的逻辑
+        }
+    }
+
+    /// <summary>
+    /// 切换菜单展开状态。
+    /// </summary>
+    [RelayCommand]
+    private void ToggleMenu()
+    {
+        IsPaneOpen = !IsPaneOpen;
     }
 
     /// <summary>
