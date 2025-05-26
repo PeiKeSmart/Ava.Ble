@@ -434,7 +434,7 @@ public class BleService {
 
                     // Format: {B2_dec}.{B1_dec:D2}.{B6_hex:X2}{B5_hex:X2}{B4_hex:X2}{B3_hex:X2}
                     // Example: input 09 02 17 09 05 25 (as ext1 to ext6) -> 2.09.25050917
-                    return $"{ext2}.{ext1:D2}.{ext6:X2}{ext5:X2}{ext4:X2}{ext3:X2}";
+                    return $"{ext2}.{ext1:X2}.{ext6:X2}{ext5:X2}{ext4:X2}{ext3:X2}";
                 }
             }
         }
