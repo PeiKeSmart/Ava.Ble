@@ -166,7 +166,11 @@ public class WindowsBleService : IDisposable
 
             if (string.IsNullOrEmpty(deviceName))
             {
-                deviceName = $"Unknown_{address:X12}";
+                // 尝试通过制造商数据或服务 UUID 推断设备类型
+                string? deviceType = InferDeviceType(args.Advertisement);
+                deviceName = string.IsNullOrEmpty(deviceType) 
+                    ? $"Unknown_{address:X12}" 
+                    : $"{deviceType}_{address:X12}";
             }
 
             // 生成设备 ID
@@ -200,6 +204,44 @@ public class WindowsBleService : IDisposable
     private void OnWatcherStopped(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementWatcherStoppedEventArgs args)
     {
         XTrace.WriteLine($"[WindowsBleService] 扫描已停止: {args.Error}");
+    }
+
+    /// <summary>根据广播数据推断设备类型</summary>
+    private string? InferDeviceType(BluetoothLEAdvertisement advertisement)
+    {
+        // 检查制造商数据
+        var manufacturerData = advertisement.ManufacturerData.FirstOrDefault();
+        if (manufacturerData != null)
+        {
+            return manufacturerData.CompanyId switch
+            {
+                0x004C => "Apple",      // Apple Inc.
+                0x0006 => "Microsoft",  // Microsoft
+                0x00E0 => "Google",     // Google
+                0x0075 => "Samsung",    // Samsung Electronics Co. Ltd.
+                0x000F => "Broadcom",   // Broadcom
+                0x0059 => "Nordic",     // Nordic Semiconductor ASA
+                0x02E5 => "JL",         // 杰理科技 (假设的公司ID,需要确认实际值)
+                _ => null
+            };
+        }
+
+        // 检查服务 UUID
+        if (advertisement.ServiceUuids.Count > 0)
+        {
+            var serviceUuid = advertisement.ServiceUuids[0].ToString().ToUpper();
+            
+            // 常见 BLE 服务类型
+            if (serviceUuid.StartsWith("0000180F")) return "Battery";
+            if (serviceUuid.StartsWith("0000180A")) return "DeviceInfo";
+            if (serviceUuid.StartsWith("0000180D")) return "HeartRate";
+            if (serviceUuid.StartsWith("00001812")) return "HID";
+            if (serviceUuid.StartsWith("0000FE9F")) return "Google";
+            if (serviceUuid.StartsWith("0000FEAA")) return "Google-Eddystone";
+            if (serviceUuid.StartsWith("0000FD6F")) return "Apple";
+        }
+
+        return null;
     }
 
     public void Dispose()
