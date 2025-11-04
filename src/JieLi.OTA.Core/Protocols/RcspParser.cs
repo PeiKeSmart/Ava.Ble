@@ -68,7 +68,7 @@ public class RcspParser
             return null;
         
         // 查找帧尾
-        int endIndex = _buffer.IndexOf(RcspPacket.RCSP_END, 5); // 从第5个字节开始查找
+        int endIndex = _buffer.IndexOf(RcspPacket.RCSP_END, 7); // 从第7个字节开始查找 (FE DC BA FLAG OpCode LEN_H LEN_L)
         if (endIndex == -1)
         {
             // 未找到帧尾，等待更多数据
@@ -103,9 +103,11 @@ public class RcspParser
 
     private int FindHead()
     {
-        for (int i = 0; i < _buffer.Count - 1; i++)
+        for (int i = 0; i < _buffer.Count - 2; i++)
         {
-            if (_buffer[i] == RcspPacket.RCSP_HEAD_1 && _buffer[i + 1] == RcspPacket.RCSP_HEAD_2)
+            if (_buffer[i] == RcspPacket.RCSP_HEAD_1 && 
+                _buffer[i + 1] == RcspPacket.RCSP_HEAD_2 &&
+                _buffer[i + 2] == RcspPacket.RCSP_HEAD_3)
             {
                 return i;
             }

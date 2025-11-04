@@ -13,16 +13,19 @@ namespace JieLi.OTA.Core.Protocols;
 public class RcspPacket
 {
     /// <summary>帧头字节1</summary>
-    public const byte RCSP_HEAD_1 = 0xAA;
+    public const byte RCSP_HEAD_1 = 0xFE;
     
     /// <summary>帧头字节2</summary>
-    public const byte RCSP_HEAD_2 = 0x55;
+    public const byte RCSP_HEAD_2 = 0xDC;
+    
+    /// <summary>帧头字节3</summary>
+    public const byte RCSP_HEAD_3 = 0xBA;
     
     /// <summary>帧尾字节</summary>
-    public const byte RCSP_END = 0xAD;
+    public const byte RCSP_END = 0xEF;
     
-    /// <summary>最小数据包长度（AA 55 FLAG SN OpCode AD）</summary>
-    public const int MIN_PACKET_LENGTH = 6;
+    /// <summary>最小数据包长度（FE DC BA FLAG OpCode LEN_H LEN_L EF）</summary>
+    public const int MIN_PACKET_LENGTH = 8;
     
     /// <summary>FLAG: 是否为命令（bit7）</summary>
     public const byte FLAG_IS_COMMAND = 0x80;
@@ -52,20 +55,32 @@ public class RcspPacket
     /// <returns>字节数组</returns>
     public byte[] ToBytes()
     {
-        var length = MIN_PACKET_LENGTH + Payload.Length;
+        var payloadLen = Payload.Length;
+        var length = MIN_PACKET_LENGTH + payloadLen;
         var buffer = new byte[length];
         
+        // 帧头 (3字节)
         buffer[0] = RCSP_HEAD_1;
         buffer[1] = RCSP_HEAD_2;
-        buffer[2] = Flag;
-        buffer[3] = Sn;
+        buffer[2] = RCSP_HEAD_3;
+        
+        // FLAG
+        buffer[3] = Flag;
+        
+        // OpCode
         buffer[4] = OpCode;
         
-        if (Payload.Length > 0)
+        // Payload长度 (2字节, 大端序)
+        buffer[5] = (byte)(payloadLen >> 8);
+        buffer[6] = (byte)(payloadLen & 0xFF);
+        
+        // Payload
+        if (payloadLen > 0)
         {
-            Buffer.BlockCopy(Payload, 0, buffer, 5, Payload.Length);
+            Buffer.BlockCopy(Payload, 0, buffer, 7, payloadLen);
         }
         
+        // 帧尾
         buffer[^1] = RCSP_END;
         
         return buffer;
@@ -79,8 +94,8 @@ public class RcspPacket
         if (data.Length < MIN_PACKET_LENGTH)
             return null;
         
-        // 校验帧头
-        if (data[0] != RCSP_HEAD_1 || data[1] != RCSP_HEAD_2)
+        // 校验帧头 (3字节)
+        if (data[0] != RCSP_HEAD_1 || data[1] != RCSP_HEAD_2 || data[2] != RCSP_HEAD_3)
             return null;
         
         // 校验帧尾
@@ -89,17 +104,22 @@ public class RcspPacket
         
         var packet = new RcspPacket
         {
-            Flag = data[2],
-            Sn = data[3],
+            Flag = data[3],
             OpCode = data[4]
         };
         
+        // 读取 Payload 长度 (大端序)
+        var payloadLength = (data[5] << 8) | data[6];
+        
+        // 校验长度
+        if (data.Length != MIN_PACKET_LENGTH + payloadLength)
+            return null;
+        
         // 提取 Payload
-        var payloadLength = data.Length - MIN_PACKET_LENGTH;
         if (payloadLength > 0)
         {
             packet.Payload = new byte[payloadLength];
-            Buffer.BlockCopy(data, 5, packet.Payload, 0, payloadLength);
+            Buffer.BlockCopy(data, 7, packet.Payload, 0, payloadLength);
         }
         
         return packet;

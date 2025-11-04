@@ -15,17 +15,17 @@ public class CmdNotifyFileSize : RcspCommand
     {
         var payload = new byte[8];
         
-        // TotalSize (4字节，小端序)
-        payload[0] = (byte)(TotalSize & 0xFF);
-        payload[1] = (byte)((TotalSize >> 8) & 0xFF);
-        payload[2] = (byte)((TotalSize >> 16) & 0xFF);
-        payload[3] = (byte)((TotalSize >> 24) & 0xFF);
+        // TotalSize (4字节，大端序)
+        payload[0] = (byte)((TotalSize >> 24) & 0xFF);
+        payload[1] = (byte)((TotalSize >> 16) & 0xFF);
+        payload[2] = (byte)((TotalSize >> 8) & 0xFF);
+        payload[3] = (byte)(TotalSize & 0xFF);
         
-        // CurrentOffset (4字节，小端序)
-        payload[4] = (byte)(CurrentOffset & 0xFF);
-        payload[5] = (byte)((CurrentOffset >> 8) & 0xFF);
-        payload[6] = (byte)((CurrentOffset >> 16) & 0xFF);
-        payload[7] = (byte)((CurrentOffset >> 24) & 0xFF);
+        // CurrentOffset (4字节，大端序)
+        payload[4] = (byte)((CurrentOffset >> 24) & 0xFF);
+        payload[5] = (byte)((CurrentOffset >> 16) & 0xFF);
+        payload[6] = (byte)((CurrentOffset >> 8) & 0xFF);
+        payload[7] = (byte)(CurrentOffset & 0xFF);
         
         return payload;
     }
