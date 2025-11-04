@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net9.0-windows10.0.19041</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\JieLi.OTA.Core\JieLi.OTA.Core.csproj" />
+    <ProjectReference Include="..\..\src\JieLi.OTA.Infrastructure\JieLi.OTA.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
