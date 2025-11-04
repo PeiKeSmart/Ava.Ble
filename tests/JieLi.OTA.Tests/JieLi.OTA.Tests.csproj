@@ -28,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\JieLi.OTA.Core\JieLi.OTA.Core.csproj" />
     <ProjectReference Include="..\..\src\JieLi.OTA.Infrastructure\JieLi.OTA.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\JieLi.OTA.Application\JieLi.OTA.Application.csproj" />
   </ItemGroup>
 
 </Project>

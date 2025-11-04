@@ -1,10 +1,10 @@
-using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using AvaloniaApplication = Avalonia.Application;
 
 namespace JieLi.OTA.Desktop;
 
-public class App : Application
+public class App : AvaloniaApplication
 {
     public override void Initialize()
     {
