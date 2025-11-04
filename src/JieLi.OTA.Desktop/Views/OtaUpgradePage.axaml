@@ -1,0 +1,164 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:JieLi.OTA.Desktop.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="JieLi.OTA.Desktop.Views.OtaUpgradePage"
+             x:DataType="vm:OtaUpgradeViewModel">
+    
+    <Design.DataContext>
+        <vm:OtaUpgradeViewModel/>
+    </Design.DataContext>
+
+    <Grid ColumnDefinitions="*,2*" Margin="20">
+        <!-- 左侧：设备选择和控制 -->
+        <StackPanel Grid.Column="0" Spacing="15" Margin="0,0,20,0">
+            
+            <!-- 设备扫描 -->
+            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8" Padding="15">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="蓝牙设备" FontSize="16" FontWeight="Bold"/>
+                    
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="开始扫描" 
+                                Command="{Binding StartScanCommand}"
+                                IsEnabled="{Binding !IsScanning}"/>
+                        <Button Content="停止扫描" 
+                                Command="{Binding StopScanCommand}"
+                                IsEnabled="{Binding IsScanning}"/>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding Devices}"
+                             SelectedItem="{Binding SelectedDevice}"
+                             Height="200"
+                             BorderBrush="#CCCCCC"
+                             BorderThickness="1">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="5">
+                                    <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding DeviceId}" FontSize="11" Foreground="#666666"/>
+                                    <TextBlock Text="{Binding Rssi, StringFormat='RSSI: {0} dBm'}" FontSize="10" Foreground="#999999"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+
+            <!-- 固件选择 -->
+            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8" Padding="15">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="固件文件" FontSize="16" FontWeight="Bold"/>
+                    
+                    <TextBox Text="{Binding FirmwareFilePath}" 
+                             IsReadOnly="True"
+                             Watermark="未选择文件"/>
+                    
+                    <Button Content="选择固件..." 
+                            Command="{Binding SelectFirmwareFileCommand}"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 升级控制 -->
+            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="8" Padding="15">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="升级控制" FontSize="16" FontWeight="Bold"/>
+                    
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="开始升级" 
+                                Command="{Binding StartUpgradeCommand}"
+                                Background="#0078D7"
+                                Foreground="White"/>
+                        <Button Content="取消升级" 
+                                Command="{Binding CancelUpgradeCommand}"
+                                Background="#D13438"
+                                Foreground="White"/>
+                    </StackPanel>
+
+                    <!-- 进度条 -->
+                    <ProgressBar Value="{Binding Progress}" 
+                                 Minimum="0" 
+                                 Maximum="100"
+                                 Height="25"
+                                 IsVisible="{Binding IsUpgrading}"/>
+                    
+                    <TextBlock Text="{Binding Progress, StringFormat={}{0}%}"
+                               HorizontalAlignment="Center"
+                               FontWeight="Bold"
+                               IsVisible="{Binding IsUpgrading}"/>
+
+                    <!-- 状态信息 -->
+                    <TextBlock Text="状态:" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                    <TextBlock Text="{Binding StatusMessage}" 
+                               TextWrapping="Wrap"
+                               Foreground="#0078D7"/>
+
+                    <!-- 详细信息 -->
+                    <Grid ColumnDefinitions="Auto,*" 
+                          RowDefinitions="Auto,Auto,Auto" 
+                          ColumnSpacing="10" 
+                          RowSpacing="5"
+                          Margin="0,10,0,0">
+                        <TextBlock Grid.Row="0" Grid.Column="0" 
+                                   Text="传输速度:" FontSize="12"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" 
+                                   Text="{Binding TransferSpeed, StringFormat={}{0} B/s}" 
+                                   FontSize="12"/>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" 
+                                   Text="已传输:" FontSize="12"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" 
+                                   Text="{Binding TransferProgressText}"
+                                   FontSize="12"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" 
+                                   Text="当前状态:" FontSize="12"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" 
+                                   Text="{Binding CurrentState}" 
+                                   FontSize="12"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- 右侧：日志 -->
+        <Border Grid.Column="1" 
+                BorderBrush="#E0E0E0" 
+                BorderThickness="1" 
+                CornerRadius="8" 
+                Padding="15">
+            <StackPanel Spacing="10">
+                <DockPanel LastChildFill="False">
+                    <TextBlock Text="运行日志" 
+                               FontSize="16" 
+                               FontWeight="Bold"
+                               DockPanel.Dock="Left"/>
+                    <Button Content="清空日志" 
+                            Command="{Binding ClearLogsCommand}"
+                            DockPanel.Dock="Right"
+                            Padding="8,4"/>
+                </DockPanel>
+
+                <ScrollViewer Height="600" 
+                              Background="#F5F5F5"
+                              BorderBrush="#CCCCCC"
+                              BorderThickness="1">
+                    <ItemsControl ItemsSource="{Binding Logs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" 
+                                           FontFamily="Consolas,Courier New"
+                                           FontSize="11"
+                                           Margin="5,2"
+                                           TextWrapping="Wrap"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
