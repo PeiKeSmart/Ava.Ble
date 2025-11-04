@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="JieLi.OTA.Desktop.Views.MainWindow"
+        Title="JieLi OTA - 杰理设备 OTA 升级工具"
+        Width="1000" Height="700"
+        MinWidth="800" MinHeight="600">
+    <Grid RowDefinitions="Auto,*">
+        <!-- 标题栏 -->
+        <Border Grid.Row="0" Background="#2C3E50" Padding="20,15">
+            <TextBlock Text="JieLi OTA 升级工具" 
+                       FontSize="20" 
+                       FontWeight="Bold" 
+                       Foreground="White"/>
+        </Border>
+
+        <!-- 主内容区 -->
+        <Grid Grid.Row="1" Margin="20">
+            <TextBlock Text="欢迎使用 JieLi OTA 升级工具"
+                       FontSize="24"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="#95A5A6"/>
+        </Grid>
+    </Grid>
+</Window>

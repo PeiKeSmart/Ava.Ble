@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>JieLi.OTA.Infrastructure</RootNamespace>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pek.Common" Version="4.12.2025.516-beta1221" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JieLi.OTA.Core\JieLi.OTA.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Windows 10 API 引用 -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.Windows.SDK.NET.Ref" />
+  </ItemGroup>
+
+</Project>
