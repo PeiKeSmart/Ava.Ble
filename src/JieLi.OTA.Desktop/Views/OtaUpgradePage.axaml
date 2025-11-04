@@ -145,18 +145,13 @@
                 <ScrollViewer Height="600" 
                               Background="#F5F5F5"
                               BorderBrush="#CCCCCC"
-                              BorderThickness="1">
-                    <ItemsControl ItemsSource="{Binding Logs}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" 
-                                           FontFamily="Consolas,Courier New"
-                                           FontSize="11"
-                                           Margin="5,2"
-                                           TextWrapping="Wrap"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                              BorderThickness="1"
+                              VerticalScrollBarVisibility="Auto">
+                    <SelectableTextBlock FontFamily="Consolas,Courier New"
+                                         FontSize="11"
+                                         Margin="5"
+                                         TextWrapping="Wrap"
+                                         Text="{Binding LogText}"/>
                 </ScrollViewer>
             </StackPanel>
         </Border>

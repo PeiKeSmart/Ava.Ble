@@ -59,6 +59,9 @@ public partial class OtaUpgradeViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<string> _logs = [];
 
+    [ObservableProperty]
+    private string _logText = string.Empty;
+
     /// <summary>初始化 OtaUpgradeViewModel。</summary>
     public OtaUpgradeViewModel(WindowsBleService bleService, OtaManager otaManager)
     {
@@ -184,6 +187,7 @@ public partial class OtaUpgradeViewModel : ViewModelBase
     private void ClearLogs()
     {
         Logs.Clear();
+        LogText = string.Empty;
     }
 
     private void OnDeviceDiscovered(object? sender, BleDevice device)
@@ -223,7 +227,11 @@ public partial class OtaUpgradeViewModel : ViewModelBase
     private void AddLog(string message)
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        Logs.Add($"[{timestamp}] {message}");
+        var logEntry = $"[{timestamp}] {message}";
+        Logs.Add(logEntry);
+
+        // 更新日志文本
+        LogText = string.Join(Environment.NewLine, Logs);
 
         // 限制日志数量
         while (Logs.Count > 100)
