@@ -1,0 +1,140 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Avalonia.Ble.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+        x:Class="Avalonia.Ble.Views.AdvertisementDataWindow"
+        x:DataType="vm:AdvertisementDataViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="广播数据详情"
+        Width="900" Height="600"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <vm:AdvertisementDataViewModel/>
+    </Design.DataContext>
+
+    <Window.Styles>
+        <!-- Removed fixed RowHeight for DataGrid to allow auto-sizing -->
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*" Margin="10">
+        <!-- 设备信息 -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="设备信息" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.DisplayName, StringFormat='设备名称: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.Id, StringFormat='设备ID: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.SignalStrength, StringFormat='信号强度: {0}'}" Margin="0,0,0,5"/>
+            <TextBlock Text="{Binding Device.LastSeenTime, StringFormat='最后发现时间: {0}'}" Margin="0,0,0,5"/>
+        </StackPanel>
+
+        <!-- 原始广播数据 -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="原始广播数据" FontWeight="Bold" FontSize="16" Margin="0,0,0,5" VerticalAlignment="Center"/>
+                <Button Content="复制"
+                        Command="{Binding CopyRawDataCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+                        Grid.Column="1"
+                        Margin="5,0,0,0"/>
+            </Grid>
+            <Border BorderBrush="Gray" BorderThickness="1" Padding="5" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                <TextBlock Text="{Binding RawData}"
+                          TextWrapping="Wrap"
+                          FontFamily="Consolas"
+                          FontSize="14"
+                          Margin="5"/>
+            </Border>
+        </StackPanel>
+
+        <!-- 广播数据详情 -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="广播数据详情" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+
+            <DataGrid Grid.Row="1"
+                      ItemsSource="{Binding AdvertisementData}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      GridLinesVisibility="All"
+                      BorderThickness="1"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <!-- LEN column as DataGridTemplateColumn for click-to-copy -->
+                    <DataGridTemplateColumn Header="长度 (LEN)" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        PointerPressed="OnCopyableTextPointerPressed" Tag="{Binding Length}">
+                                    <TextBlock Text="{Binding Length}"
+                                               VerticalAlignment="Center" HorizontalAlignment="Left"
+                                               Margin="5"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- TypeName column with Viewbox for auto font shrinking and click-to-copy -->
+                    <DataGridTemplateColumn Header="类型名称" Width="230">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        PointerPressed="OnCopyableTextPointerPressed" Tag="{Binding TypeName}">
+                                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="5">
+                                        <TextBlock Text="{Binding TypeName}" TextWrapping="NoWrap"/>
+                                    </Viewbox>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- TYPE column as DataGridTemplateColumn for click-to-copy -->
+                    <DataGridTemplateColumn Header="类型 (TYPE)" Width="120">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        PointerPressed="OnCopyableTextPointerPressed" Tag="{Binding Type, StringFormat=0x\{0:X2\}}">
+                                    <TextBlock Text="{Binding Type, StringFormat=0x\{0:X2\}}"
+                                               VerticalAlignment="Center" HorizontalAlignment="Left"
+                                               Margin="5"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- VALUE column (existing, ensure it's correct) -->
+                    <DataGridTemplateColumn Header="数据值 (VALUE)" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="Transparent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        PointerPressed="OnCopyableTextPointerPressed" Tag="{Binding ValueHex}">
+                                    <TextBlock Text="{Binding ValueHex}"
+                                              TextWrapping="Wrap"
+                                              FontFamily="Consolas"
+                                              VerticalAlignment="Center" HorizontalAlignment="Left"
+                                              Margin="5"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+
+        <!-- Toast 提示 -->
+        <Border Grid.Row="0" Grid.RowSpan="3" 
+                HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Background="#333333" CornerRadius="5" Padding="10,5"
+                Margin="0,0,0,20"
+                IsVisible="{Binding ToastService.IsToastVisible}"
+                ZIndex="100">
+            <TextBlock Text="{Binding ToastService.ToastMessage}" Foreground="White"/>
+        </Border>
+    </Grid>
+</Window>

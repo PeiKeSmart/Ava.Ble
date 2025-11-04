@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+	  
+	<PublishAot>true</PublishAot>  <!--启用 AOT 编译-->
+    <TrimMode>full</TrimMode>      <!--设置为 full 以剪裁未使用的代码，减少包体积-->
+	<InvariantGlobalization>true</InvariantGlobalization> <!--禁用全球化依赖，避免兼容性问题-->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault> <!--禁用反射序列化-->
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator> <!--启用请求委托生成器-->
+	  
+	<!-- 启用Windows 10 API访问 -->
+    <UseWinUI>false</UseWinUI>
+    <UseWindowsForms>false</UseWindowsForms>
+    <UseWPF>false</UseWPF>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\" />
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.0" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.0" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.0" />
+    <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.0">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>    <PackageReference Include="AvaloniaEdit.TextMate" Version="11.3.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="MessageBox.Avalonia" Version="3.2.0" />
+    <PackageReference Include="Pek.Common" Version="4.12.2025.516-beta1221" />
+    <PackageReference Include="RestSharp" Version="112.1.0" />
+    <PackageReference Include="Avalonia.Skia" Version="11.3.0" />
+    <PackageReference Include="TextMateSharp.Grammars" Version="1.0.66" />
+  </ItemGroup>
+	
+  <!-- Windows 10 API 引用 -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.Windows.SDK.NET.Ref" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Avalonia.Ble.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             x:Class="Avalonia.Ble.Views.AboutPage"
+             x:DataType="vm:MainWindowViewModel">
+    <StackPanel Margin="20">
+        <TextBlock Text="关于" FontSize="24" FontWeight="Bold" Margin="0,0,0,20"/>
+        
+        <TextBlock Text="Avalonia BLE 蓝牙扫描工具" FontSize="18" Margin="0,0,0,10"/>
+        <TextBlock Text="版本: 1.0.0" Margin="0,0,0,5"/>
+        <TextBlock Text="这是一个使用 Avalonia UI 开发的蓝牙低功耗设备扫描和连接工具。" TextWrapping="Wrap" Margin="0,0,0,20"/>
+        
+        <TextBlock Text="功能特点:" FontWeight="Bold" Margin="0,0,0,5"/>
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,10">
+            • 扫描并显示周围的 BLE 设备<LineBreak/>
+            • 查看设备广播数据<LineBreak/>
+            • 连接设备并浏览服务和特征<LineBreak/>
+            • 自动清理长时间未收到广播的设备<LineBreak/>
+            • 设备过滤和规则管理
+        </TextBlock>
+        
+        <TextBlock Text="© 2023 Avalonia BLE" Margin="0,20,0,0" Foreground="Gray"/>
+    </StackPanel>
+</UserControl>
