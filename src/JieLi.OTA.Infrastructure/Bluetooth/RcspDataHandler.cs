@@ -14,6 +14,7 @@ public class RcspDataHandler : IDisposable
     private readonly IBluetoothDevice _device;
     private readonly RcspParser _parser = new();
     private readonly ConcurrentDictionary<int, TaskCompletionSource<RcspPacket>> _pendingCommands = new(); // Key = (OpCode << 16) | Sn
+    private readonly ConcurrentDictionary<long, RcspPacket> _deviceCommandCache = new(); // Key = (offset << 32) | length，缓存设备主动发送的命令
     private readonly SemaphoreSlim _sendSemaphore = new(1, 1);
     private byte _currentSn = 0;
     private bool _disposed;
@@ -33,6 +34,37 @@ public class RcspDataHandler : IDisposable
 
     /// <summary>生成复合 Key: (OpCode << 16) | Sn</summary>
     private static int MakeKey(byte opCode, byte sn) => (opCode << 16) | sn;
+
+    /// <summary>生成设备命令缓存 Key: (offset << 32) | length</summary>
+    private static long MakeDeviceCommandKey(int offset, ushort length) => ((long)offset << 32) | length;
+
+    /// <summary>缓存设备主动发送的命令</summary>
+    /// <param name="offset">文件偏移</param>
+    /// <param name="length">请求长度</param>
+    /// <param name="packet">原始命令包</param>
+    public void CacheDeviceCommand(int offset, ushort length, RcspPacket packet)
+    {
+        var key = MakeDeviceCommandKey(offset, length);
+        _deviceCommandCache[key] = packet;
+        XTrace.WriteLine($"[RcspDataHandler] 缓存设备命令: offset={offset}, len={length}, Sn={packet.Payload[0]}");
+    }
+
+    /// <summary>获取并移除缓存的设备命令</summary>
+    /// <param name="offset">文件偏移</param>
+    /// <param name="length">请求长度</param>
+    /// <returns>缓存的命令包，如果不存在返回 null</returns>
+    public RcspPacket? GetCachedDeviceCommand(int offset, ushort length)
+    {
+        var key = MakeDeviceCommandKey(offset, length);
+        if (_deviceCommandCache.TryRemove(key, out var packet))
+        {
+            XTrace.WriteLine($"[RcspDataHandler] 取出缓存命令: offset={offset}, len={length}, Sn={packet.Payload[0]}");
+            return packet;
+        }
+        
+        XTrace.WriteLine($"[RcspDataHandler] 未找到缓存命令: offset={offset}, len={length}");
+        return null;
+    }
 
     /// <summary>初始化（订阅数据接收）</summary>
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken = default)
@@ -174,7 +206,16 @@ public class RcspDataHandler : IDisposable
                 }
                 else
                 {
-                    // 处理设备主动发送的命令（如请求文件块）
+                    // 处理设备主动发送的命令（如请求文件块 0xE5）
+                    // 先缓存命令，然后触发事件
+                    if (packet.OpCode == 0xE5 && packet.Payload.Length >= 7)
+                    {
+                        // Command Payload: [Sn, offset(4), length(2)]
+                        var offset = BitConverter.ToInt32(packet.Payload, 1);
+                        var length = BitConverter.ToUInt16(packet.Payload, 5);
+                        CacheDeviceCommand(offset, length, packet);
+                    }
+                    
                     OnDeviceCommandReceived?.Invoke(this, packet);
                 }
             }
@@ -201,6 +242,7 @@ public class RcspDataHandler : IDisposable
             kvp.Value.TrySetCanceled();
         }
         _pendingCommands.Clear();
+        _deviceCommandCache.Clear();
 
         _parser.Clear();
         _sendSemaphore.Dispose();

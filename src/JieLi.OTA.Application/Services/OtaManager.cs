@@ -271,21 +271,46 @@ public class OtaManager : IOtaManager
 
         try
         {
-            // 解析请求：offset (4 bytes) + length (2 bytes)
-            if (packet.Payload.Length < 6)
+            // 解析请求：Sn (1 byte) + offset (4 bytes) + length (2 bytes)
+            if (packet.Payload.Length < 7)
             {
                 XTrace.WriteLine("[OtaManager] 无效的文件块请求");
                 return;
             }
 
-            var offset = BitConverter.ToInt32(packet.Payload, 0);
-            var length = BitConverter.ToUInt16(packet.Payload, 4);
+            var offset = BitConverter.ToInt32(packet.Payload, 1); // 从索引1开始读取offset
+            var length = BitConverter.ToUInt16(packet.Payload, 5); // 从索引5开始读取length
+
+            // 从缓存中获取原始命令包（包含正确的 Sn）
+            var cachedCommand = _protocol.GetCachedDeviceCommand(offset, length) ?? packet;
+            if (cachedCommand == packet)
+            {
+                XTrace.WriteLine($"[OtaManager] 警告: 未找到缓存的命令 offset={offset}, len={length}，使用当前packet");
+            }
+            
+            var sn = cachedCommand.Payload[0]; // 从缓存的命令中获取正确的 Sn
 
             // 读取文件块
             var block = _fileService.ReadFileBlock(_firmwareData, offset, length);
 
-            // 发送文件块
-            await _currentDevice.WriteAsync(block);
+            // 构造响应：Status (1) + Sn (1) + offset (4) + length (2) + block data
+            var responsePayload = new byte[1 + 1 + 4 + 2 + block.Length];
+            responsePayload[0] = 0x00; // Status: 成功
+            responsePayload[1] = sn;   // 使用请求中的 Sn
+            BitConverter.GetBytes(offset).CopyTo(responsePayload, 2);
+            BitConverter.GetBytes(length).CopyTo(responsePayload, 6);
+            block.CopyTo(responsePayload, 8);
+
+            // 创建响应包
+            var responsePacket = new RcspPacket
+            {
+                Flag = 0x00, // 响应包
+                OpCode = OtaOpCode.CMD_OTA_FILE_BLOCK,
+                Payload = responsePayload
+            };
+
+            // 发送响应
+            await _currentDevice.WriteAsync(responsePacket.ToBytes());
 
             // 更新进度
             _sentBytes = offset + block.Length;

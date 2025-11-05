@@ -177,6 +177,12 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         remove => _dataHandler.OnDeviceCommandReceived -= value;
     }
 
+    /// <summary>获取缓存的设备命令</summary>
+    public RcspPacket? GetCachedDeviceCommand(int offset, ushort length)
+    {
+        return _dataHandler.GetCachedDeviceCommand(offset, length);
+    }
+
     private void EnsureInitialized()
     {
         if (!_isInitialized)
