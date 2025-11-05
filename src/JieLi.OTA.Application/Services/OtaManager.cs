@@ -27,6 +27,11 @@ public class OtaManager : IOtaManager
     private byte? _lastRequestSn;       // 最后一次请求的 Sn
     private const int MinSameCmdE5TimeMs = 50; // 最小重复命令间隔（毫秒）
 
+    // 超时管理：对应小程序SDK的 J()、V()、F()、M()、P()、gt() 方法
+    private CancellationTokenSource? _commandTimeoutCts;  // 命令响应超时 (J/V)
+    private CancellationTokenSource? _offlineTimeoutCts;  // 设备离线等待超时 (P/M)
+    private CancellationTokenSource? _reconnectTimeoutCts; // 重连超时 (gt/F)
+
     private OtaState _currentState = OtaState.Idle;
     private OtaProgress _progress = new();
     private readonly Stopwatch _totalTimeWatch = new();
@@ -275,6 +280,9 @@ public class OtaManager : IOtaManager
 
         try
         {
+            // ⚠️ 收到设备命令，清除之前的超时 (对应小程序SDK的 V() 方法)
+            ClearCommandTimeout();
+
             // 解析请求：Sn (1 byte) + offset (4 bytes) + length (2 bytes)
             if (packet.Payload.Length < 7)
             {
@@ -300,7 +308,7 @@ public class OtaManager : IOtaManager
             _lastRequestSn = sn;
             _lastRequestTime = now;
 
-            // ⚠️ 特殊情况：offset=0 && len=0 表示查询更新结果，不是文件块请求
+            // ⚠️ 特殊情况:offset=0 && len=0 表示查询更新结果，不是文件块请求
             if (offset == 0 && length == 0)
             {
                 XTrace.WriteLine("[OtaManager] 收到查询更新结果信号 (offset=0, len=0)");
@@ -309,7 +317,7 @@ public class OtaManager : IOtaManager
             }
 
             // 从缓存中获取原始命令包（包含正确的 Sn）
-            var cachedCommand = _protocol.GetCachedDeviceCommand(offset, length) ?? packet;
+            var cachedCommand = _protocol?.GetCachedDeviceCommand(offset, length) ?? packet;
             if (cachedCommand == packet)
             {
                 XTrace.WriteLine($"[OtaManager] 警告: 未找到缓存的命令 offset={offset}, len={length}，使用当前packet");
@@ -350,6 +358,9 @@ public class OtaManager : IOtaManager
             // 更新进度
             _sentBytes = offset + block.Length;
             UpdateProgress();
+
+            // ⚠️ 启动新的命令超时 (对应小程序SDK的 J() 方法)
+            StartCommandTimeout();
 
             XTrace.WriteLine($"[OtaManager] 发送文件块: offset={offset}, length={block.Length}, 进度={_progress.Percentage}%");
         }
@@ -407,6 +418,9 @@ public class OtaManager : IOtaManager
     /// <summary>清理资源</summary>
     private void CleanupResources()
     {
+        // 清理所有超时计时器
+        ClearAllTimeouts();
+
         if (_protocol != null)
         {
             _protocol.DeviceRequestedFileBlock -= OnDeviceRequestedFileBlock;
@@ -418,6 +432,86 @@ public class OtaManager : IOtaManager
         _firmwareData = null;
         _sentBytes = 0;
         _speedWatch.Reset();
+    }
+
+    /// <summary>启动命令响应超时 (对应小程序SDK的 J() 方法)</summary>
+    private void StartCommandTimeout()
+    {
+        ClearCommandTimeout(); // 先清除旧超时 (对应 V() 方法)
+        
+        _commandTimeoutCts = new CancellationTokenSource();
+        Task.Delay(Config.CommandTimeout, _commandTimeoutCts.Token).ContinueWith(t =>
+        {
+            if (!t.IsCanceled)
+            {
+                XTrace.WriteLine("[OtaManager] 命令响应超时");
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "命令响应超时");
+            }
+        });
+    }
+
+    /// <summary>清除命令响应超时 (对应小程序SDK的 V() 方法)</summary>
+    private void ClearCommandTimeout()
+    {
+        _commandTimeoutCts?.Cancel();
+        _commandTimeoutCts?.Dispose();
+        _commandTimeoutCts = null;
+    }
+
+    /// <summary>启动设备离线等待超时 (对应小程序SDK的 P() 方法)</summary>
+    private void StartOfflineWaitTimeout(Action onTimeout)
+    {
+        ClearOfflineWaitTimeout(); // 先清除旧超时 (对应 M() 方法)
+        
+        _offlineTimeoutCts = new CancellationTokenSource();
+        Task.Delay(Config.OfflineTimeout, _offlineTimeoutCts.Token).ContinueWith(t =>
+        {
+            if (!t.IsCanceled)
+            {
+                XTrace.WriteLine("[OtaManager] 设备离线等待超时，触发重连");
+                onTimeout?.Invoke();
+            }
+        });
+    }
+
+    /// <summary>清除设备离线等待超时 (对应小程序SDK的 M() 方法)</summary>
+    private void ClearOfflineWaitTimeout()
+    {
+        _offlineTimeoutCts?.Cancel();
+        _offlineTimeoutCts?.Dispose();
+        _offlineTimeoutCts = null;
+    }
+
+    /// <summary>启动重连超时 (对应小程序SDK的 gt() 方法)</summary>
+    private void StartReconnectTimeout()
+    {
+        ClearReconnectTimeout(); // 先清除旧超时 (对应 F() 方法)
+        
+        _reconnectTimeoutCts = new CancellationTokenSource();
+        Task.Delay(Config.ReconnectTimeout, _reconnectTimeoutCts.Token).ContinueWith(t =>
+        {
+            if (!t.IsCanceled)
+            {
+                XTrace.WriteLine("[OtaManager] 重连超时");
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_RECONNECT_TIMEOUT, "重连超时");
+            }
+        });
+    }
+
+    /// <summary>清除重连超时 (对应小程序SDK的 F() 方法)</summary>
+    private void ClearReconnectTimeout()
+    {
+        _reconnectTimeoutCts?.Cancel();
+        _reconnectTimeoutCts?.Dispose();
+        _reconnectTimeoutCts = null;
+    }
+
+    /// <summary>清除所有超时 (对应小程序SDK的 bt() 方法)</summary>
+    private void ClearAllTimeouts()
+    {
+        ClearReconnectTimeout();    // F()
+        ClearCommandTimeout();       // V()
+        ClearOfflineWaitTimeout();   // M()
     }
 
     public void Dispose()
