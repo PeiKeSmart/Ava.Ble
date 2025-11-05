@@ -19,6 +19,14 @@ public class RcspDataHandler : IDisposable
     private byte _currentSn = 0;
     private bool _disposed;
 
+    // ⚠️ 0xE5 文件块请求去重字段 (对应小程序SDK: minSameCmdE5Time, lastE5FileBlock, lastE5Time)
+    private const int MinSameCmdE5Time = 50; // 50ms，对应小程序SDK的 this.minSameCmdE5Time = 50
+    private string _lastE5FileBlock = string.Empty; // "offset_length" 格式
+    private DateTime _lastE5Time = DateTime.MinValue;
+    // 额外的 Sn 去重检查 (对应小程序SDK在上层的 Ct/Dt 检查)
+    private int? _lastE5Sn = null;
+    private DateTime _lastE5SnTime = DateTime.MinValue;
+
     public RcspDataHandler(IBluetoothDevice device)
     {
         _device = device;
@@ -211,8 +219,40 @@ public class RcspDataHandler : IDisposable
                     if (packet.OpCode == 0xE5 && packet.Payload.Length >= 7)
                     {
                         // Command Payload: [Sn, offset(4), length(2)]
+                        var sn = packet.Payload[0];
                         var offset = BitConverter.ToInt32(packet.Payload, 1);
                         var length = BitConverter.ToUInt16(packet.Payload, 5);
+
+                        // 1) Sn 去重检查：若与上一次 Sn 相同且间隔小于阈值，则忽略（对应小程序SDK的 Ct/Dt 检查）
+                        if (_lastE5Sn.HasValue && _lastE5Sn.Value == sn)
+                        {
+                            var elapsedSn = (DateTime.Now - _lastE5SnTime).TotalMilliseconds;
+                            if (elapsedSn < MinSameCmdE5Time)
+                            {
+                                XTrace.WriteLine($"[RcspDataHandler] 重复的 E5 命令 Sn={sn}，间隔 {elapsedSn:F0}ms < {MinSameCmdE5Time}ms，忽略");
+                                continue; // 忽略重复的 Sn 请求
+                            }
+                        }
+                        _lastE5Sn = sn;
+                        _lastE5SnTime = DateTime.Now;
+
+                        // 2) offset/length 去重检查：同一文件块请求间隔 < 50ms 则忽略 (对应小程序SDK)
+                        if (offset > 0 && length > 0)
+                        {
+                            var blockKey = $"{offset}_{length}";
+                            if (_lastE5FileBlock == blockKey)
+                            {
+                                var elapsed = (DateTime.Now - _lastE5Time).TotalMilliseconds;
+                                if (elapsed < MinSameCmdE5Time)
+                                {
+                                    XTrace.WriteLine($"[RcspDataHandler] 同一个文件块请求间隔太短: {elapsed:F0}ms < {MinSameCmdE5Time}ms, 忽略");
+                                    continue; // 忽略此请求
+                                }
+                            }
+                            _lastE5FileBlock = blockKey;
+                            _lastE5Time = DateTime.Now;
+                        }
+
                         CacheDeviceCommand(offset, length, packet);
                     }
                     // 2. 处理设备通知文件大小命令 (0xE8) - 需要立即响应并解析进度

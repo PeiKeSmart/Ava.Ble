@@ -134,27 +134,37 @@ public class OtaManager : IOtaManager
             //   else if (isMandatoryUpgrade) → enterUpdateMode + startTransfer
             //   else → readyToReconnectDevice
             bool needEnterUpdateMode;
-            bool needWaitForDeviceRequest;
 
             if (_deviceInfo.IsSupportDoubleBackup)
             {
                 XTrace.WriteLine("[OtaManager] 设备支持双备份模式");
                 needEnterUpdateMode = true;
-                needWaitForDeviceRequest = true;
             }
             else if (_deviceInfo.IsNeedBootLoader)
             {
                 XTrace.WriteLine("[OtaManager] 设备需要 BootLoader 模式");
-                // TODO: 实现 changeReceiveMtu 逻辑
+                // 与小程序 SDK 一致：进入 BootLoader 需要调整接收 MTU，以适配后续传输
+                try
+                {
+                    if (_currentDevice != null)
+                    {
+                        // 在 Windows 下协商 MTU，默认请求较大值，具体结果由平台决定
+                        var mtu = await _bleService.NegotiateMtuAsync(_currentDevice);
+                        XTrace.WriteLine($"[OtaManager] BootLoader 模式，已协商 MTU={mtu}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // MTU 协商失败不阻断流程，仅记录日志（与 SDK 的容错一致）
+                    XTrace.WriteLine($"[OtaManager] MTU 协商失败: {ex.Message}");
+                }
                 needEnterUpdateMode = false;
-                needWaitForDeviceRequest = true;
                 StartCommandTimeout(); // 启动命令超时监控
             }
             else if (_deviceInfo.IsMandatoryUpgrade)
             {
                 XTrace.WriteLine("[OtaManager] 设备强制升级模式");
                 needEnterUpdateMode = true;
-                needWaitForDeviceRequest = true;
             }
             else
             {
@@ -162,7 +172,6 @@ public class OtaManager : IOtaManager
                 // 普通升级:需要先让设备准备重连,再走后续流程
                 // TODO: 实现 readyToReconnectDevice (it() 方法) 逻辑
                 needEnterUpdateMode = false;
-                needWaitForDeviceRequest = false;
             }
 
             // 5. 读取文件偏移（断点续传）
@@ -230,8 +239,14 @@ public class OtaManager : IOtaManager
                 ChangeState(OtaState.WaitingReconnect);
                 XTrace.WriteLine("[OtaManager] 等待设备重连...");
 
+                var currentDevice = _currentDevice;
+                if (currentDevice == null)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_CONNECTION_LOST, "设备对象为空，无法等待重连");
+                }
+
                 var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(
-                    _currentDevice.BluetoothAddress,
+                    currentDevice.BluetoothAddress,
                     useNewMacMethod: true,
                     timeoutMs: Config.ReconnectTimeout,
                     cancellationToken: cancellationToken);
@@ -363,7 +378,46 @@ public class OtaManager : IOtaManager
             if (offset == 0 && length == 0)
             {
                 XTrace.WriteLine("[OtaManager] 收到查询更新结果信号 (offset=0, len=0)");
-                // TODO: 处理查询更新结果逻辑
+
+                // 先以零数据块应答设备请求 (与 SDK 行为一致：先快速 ACK 再查询结果)
+                var zeroAckPayload = new byte[1 + 1 + 4 + 2]; // Status(1)+Sn(1)+offset(4)+len(2)
+                zeroAckPayload[0] = 0x00; // STATUS_SUCCESS
+                zeroAckPayload[1] = sn;   // 使用当前请求中的 Sn 即可
+                // offset/len 已经是 0
+
+                var zeroAckPacket = new RcspPacket
+                {
+                    Flag = 0x00, // 响应
+                    OpCode = OtaOpCode.CMD_OTA_FILE_BLOCK,
+                    Payload = zeroAckPayload
+                };
+                await _currentDevice.WriteAsync(zeroAckPacket.ToBytes());
+
+                // 启动新的命令超时 (对应小程序SDK的 J())
+                StartCommandTimeout();
+
+                // 查询升级结果 (对应小程序SDK的 G())
+                try
+                {
+                    if (_protocol is IRcspProtocol proto)
+                    {
+                        var rsp = await proto.QueryUpdateResultAsync();
+                        XTrace.WriteLine($"[OtaManager] 升级结果查询: Status=0x{rsp.Status:X2}, Code={(rsp is RspUpdateResult ur ? ur.ResultCode : (byte)0xFF)}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 查询失败不阻断流程，继续进入等待重连
+                    XTrace.WriteLine($"[OtaManager] 升级结果查询失败: {ex.Message}");
+                }
+
+                // 认定传输阶段已完成：推进 sentBytes=Total，触发 WaitForTransferComplete 退出
+                if (_firmwareData != null)
+                {
+                    _sentBytes = _firmwareData.Length;
+                    UpdateProgress();
+                }
+
                 return;
             }
 

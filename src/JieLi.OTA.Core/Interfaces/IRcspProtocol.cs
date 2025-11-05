@@ -42,6 +42,10 @@ public interface IRcspProtocol
     Task<TResponse> SendCommandAsync<TResponse>(RcspCommand command, int timeoutMs = 5000, CancellationToken cancellationToken = default) 
         where TResponse : RcspResponse, new();
 
+    /// <summary>查询升级结果</summary>
+    /// <param name="cancellationToken">取消令牌</param>
+    Task<RspUpdateResult> QueryUpdateResultAsync(CancellationToken cancellationToken = default);
+
     /// <summary>设备请求文件块事件</summary>
     event EventHandler<RcspPacket>? DeviceRequestedFileBlock;
 

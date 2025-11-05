@@ -177,6 +177,26 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         remove => _dataHandler.OnDeviceCommandReceived -= value;
     }
 
+    /// <summary>查询升级结果</summary>
+    public async Task<RspUpdateResult> QueryUpdateResultAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+
+        try
+        {
+            XTrace.WriteLine("[RcspProtocol] 查询升级结果...");
+            var command = new CmdQueryUpdateResult();
+            var response = await _dataHandler.SendCommandAsync<RspUpdateResult>(command, 5000, cancellationToken);
+            XTrace.WriteLine($"[RcspProtocol] 升级结果: Status=0x{response.Status:X2}, Code=0x{response.ResultCode:X2}");
+            return response;
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteException(ex);
+            throw;
+        }
+    }
+
     /// <summary>获取缓存的设备命令</summary>
     public RcspPacket? GetCachedDeviceCommand(int offset, ushort length)
     {
