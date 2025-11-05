@@ -274,37 +274,58 @@ public class RcspProtocolTests : IDisposable
     {
         using var ms = new MemoryStream();
         
-        // 设备名称
+        // ⚠️ TLV格式 (Type-Length-Value)
+        
+        // Type 1: 设备名称
         var nameBytes = System.Text.Encoding.UTF8.GetBytes(deviceName);
-        ms.WriteByte((byte)nameBytes.Length);
-        ms.Write(nameBytes, 0, nameBytes.Length);
+        ms.WriteByte(1); // Type
+        ms.WriteByte((byte)nameBytes.Length); // Length
+        ms.Write(nameBytes, 0, nameBytes.Length); // Value
         
-        // 版本名称
+        // Type 2: 固件版本
         var versionBytes = System.Text.Encoding.UTF8.GetBytes(versionName);
-        ms.WriteByte((byte)versionBytes.Length);
-        ms.Write(versionBytes, 0, versionBytes.Length);
+        ms.WriteByte(2); // Type
+        ms.WriteByte((byte)versionBytes.Length); // Length
+        ms.Write(versionBytes, 0, versionBytes.Length); // Value
         
-        // 版本号（4字节，小端序）
-        ms.Write(BitConverter.GetBytes(versionCode), 0, 4);
+        // Type 5: 版本号 (2字节，大端序)
+        ms.WriteByte(5); // Type
+        ms.WriteByte(2); // Length
+        ms.WriteByte((byte)((versionCode >> 8) & 0xFF));
+        ms.WriteByte((byte)(versionCode & 0xFF));
         
-        // 设备类型
-        ms.WriteByte(deviceType);
+        // Type 6: SDK类型 / 设备类型
+        ms.WriteByte(6); // Type
+        ms.WriteByte(1); // Length
+        ms.WriteByte(deviceType); // Value
         
-        // 电池电量
-        ms.WriteByte(batteryLevel);
+        // Type 8: 双备份和BootLoader信息
+        ms.WriteByte(8); // Type
+        ms.WriteByte(3); // Length
+        ms.WriteByte(supportDoubleBackup ? (byte)0x01 : (byte)0x00); // isSupportDoubleBackup
+        ms.WriteByte(0x00); // isNeedBootLoader (默认false)
+        ms.WriteByte(0x00); // singleBackupOtaWay
         
-        // 双备份标志
-        ms.WriteByte(supportDoubleBackup ? (byte)0x01 : (byte)0x00);
+        // Type 9: 强制升级标志
+        ms.WriteByte(9); // Type
+        ms.WriteByte(3); // Length
+        ms.WriteByte(0x00); // mandatoryUpgradeFlag (默认0=非强制)
+        ms.WriteByte(0x00); // requestOtaFlag
+        ms.WriteByte(0x00); // expandMode
         
-        // MAC 地址（6字节）
+        // Type 21: 电池电量
+        ms.WriteByte(21); // Type
+        ms.WriteByte(1); // Length
+        ms.WriteByte(batteryLevel); // Value
+        
+        // Type 22: MAC 地址（6字节）
+        ms.WriteByte(22); // Type
+        ms.WriteByte(6); // Length
         var macParts = bleMac.Split(':');
         foreach (var part in macParts)
         {
             ms.WriteByte(Convert.ToByte(part, 16));
         }
-        
-        // 通信方式
-        ms.WriteByte(communicationWay);
         
         return ms.ToArray();
     }

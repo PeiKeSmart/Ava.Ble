@@ -115,7 +115,7 @@ public class OtaManager : IOtaManager
             _protocol.DeviceRequestedFileBlock += OnDeviceRequestedFileBlock;
 
             _deviceInfo = await _protocol.InitializeAsync(deviceId, cancellationToken);
-            XTrace.WriteLine($"[OtaManager] 设备信息: {_deviceInfo.DeviceName}, Version={_deviceInfo.VersionName}, Battery={_deviceInfo.BatteryLevel}%");
+            XTrace.WriteLine($"[OtaManager] 设备信息: {_deviceInfo}");
 
             // 4. 查询是否可更新
             ChangeState(OtaState.GettingDeviceInfo);
@@ -127,6 +127,44 @@ public class OtaManager : IOtaManager
 
             XTrace.WriteLine("[OtaManager] 设备支持更新");
 
+            // ⚠️ 4.5. 根据设备信息决定升级流程 (对应小程序SDK的 H() 方法)
+            // 决策树:
+            //   if (isSupportDoubleBackup) → enterUpdateMode + startTransfer
+            //   else if (isNeedBootLoader) → changeReceiveMtu + startCommandTimeout + wait
+            //   else if (isMandatoryUpgrade) → enterUpdateMode + startTransfer
+            //   else → readyToReconnectDevice
+            bool needEnterUpdateMode;
+            bool needWaitForDeviceRequest;
+
+            if (_deviceInfo.IsSupportDoubleBackup)
+            {
+                XTrace.WriteLine("[OtaManager] 设备支持双备份模式");
+                needEnterUpdateMode = true;
+                needWaitForDeviceRequest = true;
+            }
+            else if (_deviceInfo.IsNeedBootLoader)
+            {
+                XTrace.WriteLine("[OtaManager] 设备需要 BootLoader 模式");
+                // TODO: 实现 changeReceiveMtu 逻辑
+                needEnterUpdateMode = false;
+                needWaitForDeviceRequest = true;
+                StartCommandTimeout(); // 启动命令超时监控
+            }
+            else if (_deviceInfo.IsMandatoryUpgrade)
+            {
+                XTrace.WriteLine("[OtaManager] 设备强制升级模式");
+                needEnterUpdateMode = true;
+                needWaitForDeviceRequest = true;
+            }
+            else
+            {
+                XTrace.WriteLine("[OtaManager] 设备普通升级模式 (需要重连)");
+                // 普通升级:需要先让设备准备重连,再走后续流程
+                // TODO: 实现 readyToReconnectDevice (it() 方法) 逻辑
+                needEnterUpdateMode = false;
+                needWaitForDeviceRequest = false;
+            }
+
             // 5. 读取文件偏移（断点续传）
             ChangeState(OtaState.ReadingFileOffset);
             var fileOffset = await _protocol.ReadFileOffsetAsync(cancellationToken);
@@ -137,15 +175,18 @@ public class OtaManager : IOtaManager
                 XTrace.WriteLine($"[OtaManager] 检测到断点续传，从偏移 {_sentBytes} 开始");
             }
 
-            // 6. 进入更新模式
-            ChangeState(OtaState.EnteringUpdateMode);
-            var enterSuccess = await _protocol.EnterUpdateModeAsync(cancellationToken);
-            if (!enterSuccess)
+            // 6. 进入更新模式 (仅在需要时)
+            if (needEnterUpdateMode)
             {
-                return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
-            }
+                ChangeState(OtaState.EnteringUpdateMode);
+                var enterSuccess = await _protocol.EnterUpdateModeAsync(cancellationToken);
+                if (!enterSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
+                }
 
-            XTrace.WriteLine("[OtaManager] 已进入更新模式");
+                XTrace.WriteLine("[OtaManager] 已进入更新模式");
+            }
 
             // 7. 通知文件大小
             ChangeState(OtaState.EnteringUpdateMode);
