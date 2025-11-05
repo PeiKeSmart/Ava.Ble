@@ -32,7 +32,17 @@ public class OtaProgress
     public long TotalBytes { get; set; }
 
     /// <summary>百分比 (0-100)</summary>
-    public int Percentage => TotalBytes > 0 ? (int)(TransferredBytes * 100 / TotalBytes) : 0;
+    /// <remarks>对应小程序SDK的 L() 方法,传输过程中最大99.9%,避免误导用户</remarks>
+    public double Percentage
+    {
+        get
+        {
+            if (TotalBytes <= 0) return 0;
+            var percentage = (double)TransferredBytes * 100 / TotalBytes;
+            // ⚠️ 和小程序SDK保持一致: s>=100&&(s=99.9)
+            return percentage >= 100 ? 99.9 : percentage;
+        }
+    }
 
     /// <summary>传输速度 (bytes/s)</summary>
     public long Speed { get; set; }

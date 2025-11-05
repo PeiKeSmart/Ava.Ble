@@ -209,6 +209,16 @@ public class OtaManager : IOtaManager
             // 10. 完成
             ChangeState(OtaState.Completed);
             _totalTimeWatch.Stop();
+            
+            // ⚠️ 设置进度为100% (对应小程序SDK的 this.W(100))
+            _progress = new OtaProgress
+            {
+                TotalBytes = _firmwareData?.Length ?? 0,
+                TransferredBytes = _firmwareData?.Length ?? 0,
+                State = OtaState.Completed
+            };
+            ProgressChanged?.Invoke(this, _progress);
+            
             XTrace.WriteLine("[OtaManager] OTA 升级成功完成！");
 
             return new OtaResult
@@ -355,8 +365,8 @@ public class OtaManager : IOtaManager
             // 发送响应
             await _currentDevice.WriteAsync(responsePacket.ToBytes());
 
-            // 更新进度
-            _sentBytes = offset + block.Length;
+            // ⚠️ 更新进度：和小程序SDK保持一致,累加本次传输的 length (对应: t+=e, i.l=t)
+            _sentBytes += block.Length;
             UpdateProgress();
 
             // ⚠️ 启动新的命令超时 (对应小程序SDK的 J() 方法)
@@ -418,8 +428,11 @@ public class OtaManager : IOtaManager
     /// <summary>清理资源</summary>
     private void CleanupResources()
     {
-        // 清理所有超时计时器
+        // ⚠️ 清理所有超时计时器 (对应小程序SDK的 bt() 方法)
         ClearAllTimeouts();
+
+        // ⚠️ 重置进度 (对应小程序SDK的 O() 方法: this.i=0, this.l=0)
+        _sentBytes = 0;
 
         if (_protocol != null)
         {
@@ -430,7 +443,6 @@ public class OtaManager : IOtaManager
 
         _currentDevice = null;
         _firmwareData = null;
-        _sentBytes = 0;
         _speedWatch.Reset();
     }
 

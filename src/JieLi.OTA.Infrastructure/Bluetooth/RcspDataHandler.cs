@@ -215,12 +215,24 @@ public class RcspDataHandler : IDisposable
                         var length = BitConverter.ToUInt16(packet.Payload, 5);
                         CacheDeviceCommand(offset, length, packet);
                     }
-                    // 2. 处理设备通知文件大小命令 (0xE8) - 需要立即响应
+                    // 2. 处理设备通知文件大小命令 (0xE8) - 需要立即响应并解析进度
                     else if (packet.OpCode == 0xE8 && packet.Payload.Length >= 1)
                     {
                         // Command Payload: [Sn, totalSize(4), currentSize(4)?]
-                        // 需要立即构造响应并发送
                         var sn = packet.Payload[0];
+                        
+                        // ⚠️ 解析设备通知的文件大小信息 (对应小程序SDK的 notifyUpgradeSize)
+                        if (packet.Payload.Length >= 5)
+                        {
+                            var totalSize = BitConverter.ToUInt32(packet.Payload, 1);
+                            XTrace.WriteLine($"[RcspDataHandler] 设备通知总文件大小: {totalSize}");
+                            
+                            if (packet.Payload.Length >= 9)
+                            {
+                                var currentSize = BitConverter.ToUInt32(packet.Payload, 5);
+                                XTrace.WriteLine($"[RcspDataHandler] 设备通知当前进度: {currentSize}/{totalSize}");
+                            }
+                        }
                         
                         // 构造响应: [Status, Sn]
                         var responsePayload = new byte[2];
@@ -234,7 +246,7 @@ public class RcspDataHandler : IDisposable
                             Payload = responsePayload
                         };
                         
-                        XTrace.WriteLine($"[RcspDataHandler] 设备通知文件大小，立即响应: Sn={sn}");
+                        XTrace.WriteLine($"[RcspDataHandler] 立即响应设备通知: Sn={sn}");
                         _ = _device.WriteAsync(responsePacket.ToBytes()); // 异步发送，不等待
                     }
                     
