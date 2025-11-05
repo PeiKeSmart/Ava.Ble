@@ -29,4 +29,7 @@ public static class OtaOpCode
     
     /// <summary>通知文件大小</summary>
     public const byte CMD_OTA_NOTIFY_FILE_SIZE = 0xE8;
+
+    /// <summary>切换通信方式 / 设置通信MTU（对应小程序SDK的 CMD_SETTINGS_COMMUNICATION_MTU）</summary>
+    public const byte CMD_CHANGE_COMMUNICATION_WAY = 0xD1;
 }

@@ -107,6 +107,9 @@ public class OtaManagerOrderTests
         public event EventHandler<RcspPacket>? DeviceRequestedFileBlock { add { } remove { } }
         public Task DisconnectAsync() => Task.CompletedTask;
 
+        public Task<int> ChangeCommunicationWayAsync(byte communicationWay, bool isSupportNewRebootWay, CancellationToken cancellationToken = default)
+            => Task.FromResult(0); // Mock 实现，返回成功
+
         public async Task<RspUpdateResult> QueryUpdateResultAsync(CancellationToken cancellationToken = default)
         {
             // 模拟发送 0xE6 命令（带 NEED_RESPONSE 标志）

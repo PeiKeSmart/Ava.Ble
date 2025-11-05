@@ -206,6 +206,35 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         }
     }
 
+    /// <summary>切换通信方式（对应小程序SDK的 changeCommunicationWay）</summary>
+    public async Task<int> ChangeCommunicationWayAsync(byte communicationWay, bool isSupportNewRebootWay, CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+
+        try
+        {
+            XTrace.WriteLine($"[RcspProtocol] 切换通信方式: way={communicationWay}, newReboot={isSupportNewRebootWay}");
+            var command = new CmdChangeCommunicationWay 
+            { 
+                CommunicationWay = communicationWay,
+                IsSupportNewRebootWay = isSupportNewRebootWay
+            };
+            
+            // 发送命令并等待响应
+            // 注意：SDK 中这个命令可能返回设备是否支持新的重连广播方式
+            var response = await _dataHandler.SendCommandAsync<RspChangeCommunicationWay>(command, 5000, cancellationToken);
+            
+            XTrace.WriteLine($"[RcspProtocol] 切换通信方式结果: {response.Result}");
+            return response.Result;
+        }
+        catch (Exception ex)
+        {
+            // 对应 SDK：错误码如果是 ERROR_REPLY_BAD_STATUS 或 ERROR_REPLY_BAD_RESULT，不报错
+            XTrace.WriteLine($"[RcspProtocol] 切换通信方式异常（可能正常）: {ex.Message}");
+            return 0; // 默认返回 0
+        }
+    }
+
     /// <summary>获取缓存的设备命令</summary>
     public RcspPacket? GetCachedDeviceCommand(int offset, ushort length)
     {

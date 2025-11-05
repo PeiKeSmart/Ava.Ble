@@ -47,6 +47,15 @@ public class RspDeviceInfo : RcspResponse
     /// <summary>通信方式（0x01=单备份, 0x02=双备份）</summary>
     public byte CommunicationWay { get; set; }
 
+    /// <summary>是否支持新的重启广播方式（对应小程序SDK的 isSupportNewRebootWay）</summary>
+    /// <remarks>
+    /// SDK说明：用于判断设备是否支持新的断开重连广播方式。
+    /// - true: 设备支持新方式，断开后会发送特定广播
+    /// - false: 设备使用旧方式
+    /// 默认 false
+    /// </remarks>
+    public bool IsSupportNewRebootWay { get; set; }
+
     protected override void ParsePayload(byte[] payload)
     {
         if (payload.Length < 3)

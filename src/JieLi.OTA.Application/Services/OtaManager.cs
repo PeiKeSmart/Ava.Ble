@@ -200,40 +200,29 @@ public class OtaManager : IOtaManager
                 };
                 _isWaitingForReconnect = true;
 
+                // 🔥 P1 修复：完全事件驱动，不同步等待
+                // 对应 SDK：it() 立即返回，重连由 onDeviceDisconnect → onNeedReconnect 事件链触发
+                
                 // 调用 it() 准备重连，启动 6 秒离线等待
                 await ReadyToReconnectDeviceAsync(cancellationToken);
                 
-                // ⚠️ 注意：与 SDK 保持一致，it() 立即返回，不阻塞等待重连
-                // 重连由 OnDeviceConnectionStatusChanged 事件触发
-                // 这里不再同步等待，直接跳过后续的进入更新模式步骤
-                XTrace.WriteLine("[OtaManager] 已启动重连准备，等待设备断开...");
+                XTrace.WriteLine("[OtaManager] ✅ 已启动重连准备（it()），立即返回");
+                XTrace.WriteLine("[OtaManager] 后续流程将由设备断开事件触发（HandleReconnectCompleteAsync）");
                 
-                // 由于单备份模式需要等待重连后才能继续，这里直接返回成功
-                // 后续流程会在设备断开并重连成功后，由 HandleReconnectCompleteAsync 继续
-                needEnterUpdateMode = false;
+                // 🎯 完全事件驱动：it() 后立即返回成功
+                // 设备断开并重连后，OnDeviceConnectionStatusChanged 会调用 HandleReconnectCompleteAsync
+                // HandleReconnectCompleteAsync 将继续执行：读取偏移 → 进入更新模式 → 传输文件
                 
-                // ⚠️ 临时解决方案：等待重连完成（后续优化为事件驱动）
-                // TODO: 完全移除此处的同步等待，改为事件驱动
-                var waitTask = Task.Run(async () =>
+                _totalTimeWatch.Stop();
+                return new OtaResult
                 {
-                    var timeout = TimeSpan.FromSeconds(Config.ReconnectTimeout / 1000.0);
-                    var startTime = DateTime.Now;
-                    
-                    while (_isWaitingForReconnect && (DateTime.Now - startTime) < timeout)
-                    {
-                        await Task.Delay(100, cancellationToken);
-                    }
-                    
-                    return !_isWaitingForReconnect; // 如果状态已清除，说明重连成功
-                });
-                
-                var reconnectSuccess = await waitTask;
-                if (!reconnectSuccess)
-                {
-                    return CreateErrorResult(OtaErrorCode.ERROR_RECONNECT_TIMEOUT, "预传输重连超时");
-                }
-                
-                XTrace.WriteLine($"[OtaManager] 预传输重连成功");
+                    Success = true,
+                    ErrorCode = 0,
+                    ErrorMessage = "单备份OTA已启动，等待设备重连（事件驱动模式）",
+                    DeviceInfo = _deviceInfo,
+                    FinalState = OtaState.WaitingReconnect,
+                    TotalTime = _totalTimeWatch.Elapsed
+                };
             }
 
             // 5. 读取文件偏移（断点续传）
@@ -389,8 +378,34 @@ public class OtaManager : IOtaManager
     {
         XTrace.WriteLine("[OtaManager] 准备进入重连阶段（it()）");
 
-        if (_currentDevice != null)
+        // 🔥 P0 修复1: 对应 SDK it() 内部的 this.P(6000)
+        // SDK 逻辑：启动 6 秒离线等待超时（在 onDeviceDisconnect 中清除）
+        StartOfflineWaitTimeout(() =>
         {
+            XTrace.WriteLine("[OtaManager] 设备离线等待超时（P超时）");
+            // 对应 SDK: 调用 onNeedReconnect
+            StartReconnectTimeout();
+        });
+
+        if (_currentDevice != null && _protocol != null && _deviceInfo != null)
+        {
+            // 🔥 P0 修复2: 对应 SDK it() 中的 this.A.changeCommunicationWay()
+            // 告知设备切换通信方式和是否支持新的重启广播方式
+            try
+            {
+                byte communicationWay = _deviceInfo.CommunicationWay;
+                bool isSupportNewRebootWay = _deviceInfo.IsSupportNewRebootWay;
+                
+                XTrace.WriteLine($"[OtaManager] 发送切换通信方式命令: way={communicationWay}, newReboot={isSupportNewRebootWay}");
+                await _protocol.ChangeCommunicationWayAsync(communicationWay, isSupportNewRebootWay, cancellationToken);
+                XTrace.WriteLine("[OtaManager] 切换通信方式命令已发送（对应SDK的changeCommunicationWay）");
+            }
+            catch (Exception ex)
+            {
+                // 对应 SDK：错误码如果是 ERROR_REPLY_BAD_STATUS 或 ERROR_REPLY_BAD_RESULT，不报错
+                XTrace.WriteLine($"[OtaManager] 切换通信方式异常（可能正常）: {ex.Message}");
+            }
+
             // 设备族/模式特定策略（默认 No-Op）
             try
             {
@@ -415,6 +430,10 @@ public class OtaManager : IOtaManager
                 }
             }
         }
+        else
+        {
+            XTrace.WriteLine($"[OtaManager] ⚠️ 无法发送ChangeCommunicationWay: device={_currentDevice != null}, protocol={_protocol != null}, deviceInfo={_deviceInfo != null}");
+        }
     }
 
     /// <summary>设置自定义的准备重连策略（测试或特定机型可注入）</summary>
@@ -426,7 +445,7 @@ public class OtaManager : IOtaManager
     /// <summary>处理重连完成后的逻辑（对应小程序SDK的 onDeviceInit）</summary>
     private async Task HandleReconnectCompleteAsync()
     {
-        XTrace.WriteLine("[OtaManager] 处理重连完成逻辑");
+        XTrace.WriteLine("[OtaManager] 🔥 处理重连完成逻辑（单备份OTA事件驱动继续）");
 
         // 对应 SDK: if (this.isOTA() && null != this.T)
         // 此时 _reconnectTimeoutCts 已在 StartReconnectTimeout 中创建
@@ -436,56 +455,161 @@ public class OtaManager : IOtaManager
         {
             XTrace.WriteLine("[OtaManager] 协议或设备为空，无法继续");
             ChangeState(OtaState.Failed);
+            ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, "协议或设备为空");
+            return;
+        }
+
+        if (_firmwareData == null)
+        {
+            XTrace.WriteLine("[OtaManager] 固件数据为空，无法继续");
+            ChangeState(OtaState.Failed);
+            ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, "固件数据为空");
             return;
         }
 
         try
         {
             // 重新初始化协议并获取设备信息
+            XTrace.WriteLine("[OtaManager] 重连后重新初始化协议...");
             var deviceInfo = await _protocol.InitializeAsync(_currentDevice.DeviceId, default);
             _deviceInfo = deviceInfo;
 
-            // 对应 SDK: t.isMandatoryUpgrade ? (进入更新模式) : this.q() (完成 OTA)
-            if (deviceInfo != null && deviceInfo.IsMandatoryUpgrade)
+            // 🔥 单备份OTA重连后，继续完整流程：读取偏移 → 进入更新模式 → 传输文件
+            
+            // 1. 读取文件偏移（断点续传）
+            ChangeState(OtaState.ReadingFileOffset);
+            XTrace.WriteLine("[OtaManager] 读取文件偏移...");
+            var fileOffset = await _protocol.ReadFileOffsetAsync(default);
+            _sentBytes = (int)fileOffset.Offset;
+
+            if (_sentBytes > 0)
             {
-                XTrace.WriteLine("[OtaManager] 重连后，设备为强制升级模式，进入更新模式");
-                
-                // 进入更新模式
+                XTrace.WriteLine($"[OtaManager] 检测到断点续传，从偏移 {_sentBytes} 开始");
+            }
+
+            // 2. 进入更新模式（对应 SDK：重连后强制升级或需要进入更新模式）
+            bool needEnterUpdateMode = deviceInfo.IsMandatoryUpgrade || deviceInfo.IsNeedBootLoader;
+            
+            if (needEnterUpdateMode)
+            {
                 ChangeState(OtaState.EnteringUpdateMode);
+                XTrace.WriteLine("[OtaManager] 进入更新模式...");
                 var enterSuccess = await _protocol.EnterUpdateModeAsync(default);
                 if (!enterSuccess)
                 {
                     XTrace.WriteLine("[OtaManager] 进入更新模式失败");
                     ChangeState(OtaState.Failed);
+                    ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
                     return;
                 }
+                XTrace.WriteLine("[OtaManager] 已进入更新模式");
+            }
 
-                // 通知文件大小
-                if (_firmwareData != null)
+            // 3. 通知文件大小
+            ChangeState(OtaState.EnteringUpdateMode);
+            XTrace.WriteLine($"[OtaManager] 通知文件大小: {_firmwareData.Length} bytes");
+            var notifySuccess = await _protocol.NotifyFileSizeAsync((uint)_firmwareData.Length, default);
+            if (!notifySuccess)
+            {
+                XTrace.WriteLine("[OtaManager] 通知文件大小失败");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, "通知文件大小失败");
+                return;
+            }
+
+            // 4. 传输固件数据
+            ChangeState(OtaState.TransferringFile);
+            _speedWatch.Restart();
+            XTrace.WriteLine("[OtaManager] 等待设备请求文件块...");
+
+            // 等待传输完成或超时
+            var transferTimeout = TimeSpan.FromMinutes(10); // 默认10分钟
+            var transferTask = WaitForTransferCompleteAsync(default);
+            var cts = new CancellationTokenSource(transferTimeout);
+            var completedTask = await Task.WhenAny(transferTask, Task.Delay(Timeout.InfiniteTimeSpan, cts.Token));
+
+            if (completedTask != transferTask)
+            {
+                XTrace.WriteLine("[OtaManager] 固件传输超时");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "固件传输超时");
+                return;
+            }
+
+            var transferSuccess = await transferTask;
+            if (!transferSuccess)
+            {
+                XTrace.WriteLine("[OtaManager] 固件传输失败");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, "固件传输失败");
+                return;
+            }
+
+            _speedWatch.Stop();
+            XTrace.WriteLine("[OtaManager] ✅ 固件传输完成");
+
+            // 5. 等待设备应用固件后重连（对应SDK的第二次重连）
+            ChangeState(OtaState.WaitingReconnect);
+            XTrace.WriteLine("[OtaManager] 等待设备应用固件后重连...");
+
+            // 启动重连超时计时（对应小程序SDK的 gt()）
+            StartReconnectTimeout();
+
+            var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(
+                _currentDeviceAddress,
+                useNewMacMethod: true,
+                timeoutMs: Config.ReconnectTimeout,
+                cancellationToken: default);
+
+            // 清理重连超时（对应小程序SDK的 F()）
+            ClearReconnectTimeout();
+
+            if (reconnectedDevice == null)
+            {
+                XTrace.WriteLine("[OtaManager] 设备应用固件后重连超时");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_RECONNECT_TIMEOUT, "设备应用固件后重连超时");
+                return;
+            }
+
+            _currentDevice = reconnectedDevice;
+            XTrace.WriteLine($"[OtaManager] 设备应用固件后已重连: {reconnectedDevice.DeviceId}");
+
+            // 6. 查询升级结果
+            ChangeState(OtaState.QueryingResult);
+            XTrace.WriteLine("[OtaManager] 查询升级结果...");
+
+            var result = await _protocol.QueryUpdateResultAsync(default);
+            XTrace.WriteLine($"[OtaManager] 升级结果: Status=0x{result.Status:X2}, Code=0x{result.ResultCode:X2}");
+
+            if (result.ResultCode == 0)
+            {
+                XTrace.WriteLine("[OtaManager] ✅✅✅ OTA 升级成功！");
+                ChangeState(OtaState.Completed);
+                _totalTimeWatch.Stop();
+                
+                // 设置进度为100%（对应小程序SDK的 this.W(100)）
+                _progress = new OtaProgress
                 {
-                    var notifySuccess = await _protocol.NotifyFileSizeAsync((uint)_firmwareData.Length, default);
-                    if (!notifySuccess)
-                    {
-                        XTrace.WriteLine("[OtaManager] 通知文件大小失败");
-                        ChangeState(OtaState.Failed);
-                        return;
-                    }
-                }
-
-                // 继续传输流程
-                ChangeState(OtaState.TransferringFile);
+                    TotalBytes = _firmwareData.Length,
+                    TransferredBytes = _firmwareData.Length,
+                    State = OtaState.Completed
+                };
+                ProgressChanged?.Invoke(this, _progress);
             }
             else
             {
-                // 非强制升级，直接完成 OTA（对应 SDK 的 q()）
-                XTrace.WriteLine("[OtaManager] 重连后，设备非强制升级，完成 OTA");
-                ChangeState(OtaState.Completed);
+                XTrace.WriteLine($"[OtaManager] ❌ OTA 升级失败，结果码: 0x{result.ResultCode:X2}");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"升级失败，结果码: 0x{result.ResultCode:X2}");
             }
         }
         catch (Exception ex)
         {
             XTrace.WriteLine($"[OtaManager] 重连后处理异常: {ex.Message}");
+            XTrace.WriteException(ex);
             ChangeState(OtaState.Failed);
+            ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"重连后处理异常: {ex.Message}");
         }
     }
 

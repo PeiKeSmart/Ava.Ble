@@ -46,6 +46,13 @@ public interface IRcspProtocol
     /// <param name="cancellationToken">取消令牌</param>
     Task<RspUpdateResult> QueryUpdateResultAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>切换通信方式（对应小程序SDK的 changeCommunicationWay）</summary>
+    /// <param name="communicationWay">通信方式（0=BLE, 1=SPP, 2=USB）</param>
+    /// <param name="isSupportNewRebootWay">是否支持新的重启方式</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>设备返回的结果码</returns>
+    Task<int> ChangeCommunicationWayAsync(byte communicationWay, bool isSupportNewRebootWay, CancellationToken cancellationToken = default);
+
     /// <summary>设备请求文件块事件</summary>
     event EventHandler<RcspPacket>? DeviceRequestedFileBlock;
 
