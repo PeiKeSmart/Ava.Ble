@@ -53,6 +53,14 @@ public interface IRcspProtocol
     /// <returns>设备返回的结果码</returns>
     Task<int> ChangeCommunicationWayAsync(byte communicationWay, bool isSupportNewRebootWay, CancellationToken cancellationToken = default);
 
+    /// <summary>重启设备（对应小程序SDK的 rebootDevice）</summary>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <remarks>
+    /// 此方法是"发送即忘"（fire-and-forget）命令，不需要等待设备响应。
+    /// SDK中传入null回调，表示不关心执行结果，但命令必须发送。
+    /// </remarks>
+    Task RebootDeviceAsync(CancellationToken cancellationToken = default);
+
     /// <summary>设备请求文件块事件</summary>
     event EventHandler<RcspPacket>? DeviceRequestedFileBlock;
 

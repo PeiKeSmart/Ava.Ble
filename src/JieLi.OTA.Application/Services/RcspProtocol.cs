@@ -235,6 +235,38 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         }
     }
 
+    /// <summary>重启设备（对应小程序SDK的 rebootDevice）</summary>
+    public async Task RebootDeviceAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+
+        try
+        {
+            XTrace.WriteLine("[RcspProtocol] 发送重启设备命令...");
+            var command = new CmdRebootDevice(CmdRebootDevice.OP_REBOOT);
+            
+            // 对应SDK: new A("rebootDevice",e) - 使用fire-and-forget模式
+            // SDK中callback传null，表示不需要等待响应结果
+            // 直接发送命令数据包即可，设备会自动重启并断开连接
+            
+            var packet = command.ToPacket(0); // Sn=0，因为不需要响应匹配
+            var bytes = packet.ToBytes();
+            
+            var sent = await _dataHandler.SendDataAsync(bytes, cancellationToken);
+            
+            if (sent)
+                XTrace.WriteLine("[RcspProtocol] 重启命令已发送（fire-and-forget）");
+            else
+                XTrace.WriteLine("[RcspProtocol] 重启命令发送失败（可能设备已断开）");
+        }
+        catch (Exception ex)
+        {
+            // 重启命令是fire-and-forget，失败不影响整体流程
+            // 设备可能在收到命令后立即断开，导致发送失败是正常的
+            XTrace.WriteLine($"[RcspProtocol] 发送重启命令异常（可能设备已断开）: {ex.Message}");
+        }
+    }
+
     /// <summary>获取缓存的设备命令</summary>
     public RcspPacket? GetCachedDeviceCommand(int offset, ushort length)
     {

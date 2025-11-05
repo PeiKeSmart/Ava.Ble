@@ -110,6 +110,9 @@ public class OtaManagerOrderTests
         public Task<int> ChangeCommunicationWayAsync(byte communicationWay, bool isSupportNewRebootWay, CancellationToken cancellationToken = default)
             => Task.FromResult(0); // Mock 实现，返回成功
 
+        public Task RebootDeviceAsync(CancellationToken cancellationToken = default)
+            => Task.CompletedTask; // Mock 实现，模拟发送重启命令
+
         public async Task<RspUpdateResult> QueryUpdateResultAsync(CancellationToken cancellationToken = default)
         {
             // 模拟发送 0xE6 命令（带 NEED_RESPONSE 标志）

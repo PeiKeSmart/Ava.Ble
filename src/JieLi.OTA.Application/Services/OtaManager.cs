@@ -251,19 +251,14 @@ public class OtaManager : IOtaManager
                 }
 
                 XTrace.WriteLine("[OtaManager] 已进入更新模式");
+                
+                // 对应 SDK N() 方法：成功后启动命令超时（对应 t.J()）
+                StartCommandTimeout();
             }
 
-            // 7. 通知文件大小
-            ChangeState(OtaState.EnteringUpdateMode);
-            var notifySuccess = await _protocol.NotifyFileSizeAsync((uint)fileData.Length, cancellationToken);
-            if (!notifySuccess)
-            {
-                return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "通知文件大小失败");
-            }
-
-            XTrace.WriteLine($"[OtaManager] 已通知文件大小: {fileData.Length} bytes");
-
-            // 8. 传输固件数据
+            // 7. 开始传输固件数据
+            // 对应 SDK：进入更新模式后，等待设备主动请求文件块（通过 CmdReadFileBlock）
+            // 设备也可能主动通知文件大小（通过 CmdNotifyUpdateFileSize）
             ChangeState(OtaState.TransferringFile);
             _speedWatch.Restart();
 
@@ -423,34 +418,36 @@ public class OtaManager : IOtaManager
                 bool isSupportNewRebootWay = _deviceInfo.IsSupportNewRebootWay;
                 
                 XTrace.WriteLine($"[OtaManager] 发送切换通信方式命令: way={communicationWay}, newReboot={isSupportNewRebootWay}");
-                await _protocol.ChangeCommunicationWayAsync(communicationWay, isSupportNewRebootWay, cancellationToken);
-                XTrace.WriteLine("[OtaManager] 切换通信方式命令已发送（对应SDK的changeCommunicationWay）");
-            }
-            catch (TimeoutException ex)
-            {
-                // 🚨 重要：对应 SDK 的错误处理逻辑
-                // SDK: onError(t,s){ t!=h.ERROR_REPLY_BAD_STATUS&&t!=h.ERROR_REPLY_BAD_RESULT||e.D(t,s) }
-                // 意思是：只有 BAD_STATUS 和 BAD_RESULT 这两种错误被忽略，其他错误需要报告
+                var result = await _protocol.ChangeCommunicationWayAsync(communicationWay, isSupportNewRebootWay, cancellationToken);
                 
-                // 超时错误不是 BAD_STATUS/BAD_RESULT，应该报告
-                XTrace.WriteLine($"[OtaManager] ❌ 切换通信方式超时: {ex.Message}");
-                ChangeState(OtaState.Failed);
-                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_COMMAND_TIMEOUT, $"切换通信方式超时: {ex.Message}");
-                return;
-            }
-            catch (Exception ex) when (ex.Message.Contains("BAD_STATUS") || ex.Message.Contains("BAD_RESULT"))
-            {
-                // 对应 SDK：ERROR_REPLY_BAD_STATUS 或 ERROR_REPLY_BAD_RESULT 被忽略
-                XTrace.WriteLine($"[OtaManager] 切换通信方式返回 BAD_STATUS/BAD_RESULT（SDK忽略此错误）: {ex.Message}");
-                // 继续执行，不中断流程
+                // 对应SDK: onResult(e){ t.isSupportNewReconnectADV=0!=e }
+                // 结果用于设置是否支持新的重连广播方式
+                bool isSupportNewReconnectADV = result != 0;
+                if (_reconnectInfo != null)
+                {
+                    _reconnectInfo.UseNewMacMethod = isSupportNewReconnectADV;
+                }
+                
+                XTrace.WriteLine($"[OtaManager] 切换通信方式命令已发送，支持新广播: {isSupportNewReconnectADV}");
             }
             catch (Exception ex)
             {
-                // 其他错误应该报告（对应SDK的逻辑）
-                XTrace.WriteLine($"[OtaManager] ❌ 切换通信方式失败: {ex.Message}");
-                ChangeState(OtaState.Failed);
-                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"切换通信方式失败: {ex.Message}");
-                return;
+                // 对应SDK的错误处理逻辑：
+                // onError(t,s){ t!=h.ERROR_REPLY_BAD_STATUS&&t!=h.ERROR_REPLY_BAD_RESULT||e.D(t,s) }
+                // 
+                // 真实含义（JavaScript逻辑运算符优先级）：
+                // if (t != BAD_STATUS && t != BAD_RESULT) {
+                //     // 忽略错误，不处理
+                // } else {
+                //     e.D(t,s)  // 只有BAD_STATUS或BAD_RESULT才报错
+                // }
+                //
+                // 所以SDK的逻辑是：只有BAD_STATUS/BAD_RESULT才会报错，其他错误都忽略！
+                // 这与RcspProtocol中捕获所有异常返回0的实现一致
+                
+                // ✅ 修复：所有异常都忽略，因为RcspProtocol已经处理了
+                XTrace.WriteLine($"[OtaManager] 切换通信方式异常（SDK逻辑：忽略所有错误）: {ex.Message}");
+                // 继续执行，不中断流程
             }
 
             // 设备族/模式特定策略（默认 No-Op）
@@ -622,33 +619,73 @@ public class OtaManager : IOtaManager
             _currentDevice = reconnectedDevice;
             XTrace.WriteLine($"[OtaManager] 设备应用固件后已重连: {reconnectedDevice.DeviceId}");
 
-            // 6. 查询升级结果
+            // 6. 查询升级结果（对应SDK的 G() 方法）
             ChangeState(OtaState.QueryingResult);
             XTrace.WriteLine("[OtaManager] 查询升级结果...");
 
             var result = await _protocol.QueryUpdateResultAsync(default);
             XTrace.WriteLine($"[OtaManager] 升级结果: Status=0x{result.Status:X2}, Code=0x{result.ResultCode:X2}");
 
-            if (result.ResultCode == 0)
+            // 对应SDK的switch(e)逻辑
+            if (result.ResultCode == 0x00)  // b.nt - 成功
             {
-                XTrace.WriteLine("[OtaManager] ✅✅✅ OTA 升级成功！");
+                XTrace.WriteLine("[OtaManager] ✅ 升级成功！");
+                
+                // 对应SDK: t.A.rebootDevice(null) - 发送重启命令（fire-and-forget）
+                try
+                {
+                    await _protocol.RebootDeviceAsync(default);
+                }
+                catch (Exception ex)
+                {
+                    // 重启命令失败不影响流程，设备可能已自动重启
+                    XTrace.WriteLine($"[OtaManager] 发送重启命令异常（可忽略）: {ex.Message}");
+                }
+                
+                // 对应SDK: t.v(null), t.O() - 清理配置和进度
+                CleanupResources();
+                
+                // 对应SDK: void setTimeout((()=>{t.q()}),100) - 100ms后调用q()
+                await Task.Delay(100);
+                
+                XTrace.WriteLine("[OtaManager] ✅✅✅ OTA 升级成功完成！");
                 ChangeState(OtaState.Completed);
                 _totalTimeWatch.Stop();
                 
-                // 设置进度为100%（对应小程序SDK的 this.W(100)）
+                // 设置进度为100%
                 _progress = new OtaProgress
                 {
-                    TotalBytes = _firmwareData.Length,
-                    TransferredBytes = _firmwareData.Length,
+                    TotalBytes = _firmwareData?.Length ?? 0,
+                    TransferredBytes = _firmwareData?.Length ?? 0,
                     State = OtaState.Completed
                 };
                 ProgressChanged?.Invoke(this, _progress);
             }
+            else if (result.ResultCode == 0x80)  // b.rt - 需要重连
+            {
+                XTrace.WriteLine("[OtaManager] ⚠️ 升级结果：需要再次重连（0x80）");
+                
+                // 对应SDK: void t.it() - 调用it()准备重连
+                await ReadyToReconnectDeviceAsync(default);
+                
+                XTrace.WriteLine("[OtaManager] 已启动再次重连流程，等待设备断开...");
+                // 后续流程将由 OnDeviceConnectionStatusChanged 触发
+            }
             else
             {
+                // 其他错误码
+                var errorCode = result.ResultCode switch
+                {
+                    0x01 => OtaErrorCode.ERROR_DATA_CHECK,           // b.lt
+                    0x02 => OtaErrorCode.ERROR_OTA_FAIL,             // b.ht
+                    0x03 => OtaErrorCode.ERROR_ENCRYPTED_KEY_NOT_MATCH, // b.ot
+                    // 可以继续添加其他错误码映射
+                    _ => OtaErrorCode.ERROR_OTA_FAIL
+                };
+                
                 XTrace.WriteLine($"[OtaManager] ❌ OTA 升级失败，结果码: 0x{result.ResultCode:X2}");
                 ChangeState(OtaState.Failed);
-                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"升级失败，结果码: 0x{result.ResultCode:X2}");
+                ErrorOccurred?.Invoke(errorCode, $"升级失败，结果码: 0x{result.ResultCode:X2}");
             }
         }
         catch (Exception ex)
