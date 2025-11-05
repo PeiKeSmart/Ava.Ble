@@ -15,11 +15,11 @@ public class CmdGetTargetInfo : RcspCommand
     {
         var payload = new byte[5];
         
-        // Mask (4字节，小端序)
-        payload[0] = (byte)(Mask & 0xFF);
-        payload[1] = (byte)((Mask >> 8) & 0xFF);
-        payload[2] = (byte)((Mask >> 16) & 0xFF);
-        payload[3] = (byte)((Mask >> 24) & 0xFF);
+        // Mask (4字节，大端序)
+        payload[0] = (byte)((Mask >> 24) & 0xFF);
+        payload[1] = (byte)((Mask >> 16) & 0xFF);
+        payload[2] = (byte)((Mask >> 8) & 0xFF);
+        payload[3] = (byte)(Mask & 0xFF);
         
         // Platform (1字节)
         payload[4] = Platform;

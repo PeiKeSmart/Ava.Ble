@@ -157,13 +157,22 @@ public class RcspProtocolTests : IDisposable
 
         public void SetupResponse(byte opCode, byte[] payload)
         {
-            // 构建响应包(新协议格式无 Sn 字段)
-            // 响应包: 非命令(bit7=0)、不需响应(bit6=0)、响应标志(bit0=1)
+            // 响应 Payload 格式: [Status, Sn, ...业务数据]
+            // Status=0 表示成功
+            var responsePayload = new byte[2 + payload.Length];
+            responsePayload[0] = 0x00; // Status = SUCCESS
+            responsePayload[1] = 0x00; // Sn = 0 (将在 WriteAsync 中动态替换)
+            if (payload.Length > 0)
+            {
+                Buffer.BlockCopy(payload, 0, responsePayload, 2, payload.Length);
+            }
+            
+            // 构建响应包
             var packet = new RcspPacket
             {
-                Flag = 0x01, // 响应标志
+                Flag = 0x01, // 响应标志 (非命令、非需响应)
                 OpCode = opCode,
-                Payload = payload
+                Payload = responsePayload
             };
             _responses[opCode] = packet.ToBytes();
         }
@@ -210,14 +219,28 @@ public class RcspProtocolTests : IDisposable
                         return;
                     }
                     
-                    System.Diagnostics.Debug.WriteLine($"[Mock] 解析成功: OpCode=0x{packet.OpCode:X2}");
+                    System.Diagnostics.Debug.WriteLine($"[Mock] 解析成功: OpCode=0x{packet.OpCode:X2}, IsCommand={packet.IsCommand}, PayloadLen={packet.Payload.Length}");
+                    
+                    // 从命令 Payload 中提取 Sn (Command Payload: [Sn, ...])
+                    byte commandSn = packet.Payload.Length > 0 ? packet.Payload[0] : (byte)0;
+                    System.Diagnostics.Debug.WriteLine($"[Mock] 提取命令 Sn={commandSn}");
                     
                     if (_responses.TryGetValue(packet.OpCode, out var responseData))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Mock] 发送响应: {BitConverter.ToString(responseData)}");
-                        // 新协议无需更新序列号,直接发送响应
-                        _dataCallback?.Invoke(responseData);
-                        DataReceived?.Invoke(this, responseData);
+                        // 克隆响应数据
+                        var response = (byte[])responseData.Clone();
+                        
+                        // 更新响应 Payload 中的 Sn (Response Payload: [Status, Sn, ...])
+                        // Payload 在 response[7..^1] 位置
+                        if (response.Length > 8) // 至少有 Payload[0] 和 Payload[1]
+                        {
+                            response[8] = commandSn; // Payload[1] = Sn
+                            System.Diagnostics.Debug.WriteLine($"[Mock] 更新响应 Sn={commandSn}");
+                        }
+                        
+                        System.Diagnostics.Debug.WriteLine($"[Mock] 发送响应: {BitConverter.ToString(response)}");
+                        _dataCallback?.Invoke(response);
+                        DataReceived?.Invoke(this, response);
                     }
                     else
                     {

@@ -13,14 +13,26 @@ public class RcspDataHandler : IDisposable
 {
     private readonly IBluetoothDevice _device;
     private readonly RcspParser _parser = new();
-    private readonly ConcurrentDictionary<byte, TaskCompletionSource<RcspPacket>> _pendingCommands = new(); // Key 改为 OpCode
+    private readonly ConcurrentDictionary<int, TaskCompletionSource<RcspPacket>> _pendingCommands = new(); // Key = (OpCode << 16) | Sn
     private readonly SemaphoreSlim _sendSemaphore = new(1, 1);
+    private byte _currentSn = 0;
     private bool _disposed;
 
     public RcspDataHandler(IBluetoothDevice device)
     {
         _device = device;
     }
+
+    /// <summary>生成序列号（0-255 循环）</summary>
+    private byte GenerateSn()
+    {
+        var sn = _currentSn;
+        _currentSn = (byte)((_currentSn + 1) % 256);
+        return sn;
+    }
+
+    /// <summary>生成复合 Key: (OpCode << 16) | Sn</summary>
+    private static int MakeKey(byte opCode, byte sn) => (opCode << 16) | sn;
 
     /// <summary>初始化（订阅数据接收）</summary>
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken = default)
@@ -44,21 +56,27 @@ public class RcspDataHandler : IDisposable
 
         try
         {
-            // 创建数据包(新协议无序列号,使用 OpCode 匹配)
-            var packet = command.ToPacket();
+            // 生成序列号
+            byte sn = GenerateSn();
+            
+            // 创建数据包 (Payload 格式: [Sn, ...业务数据])
+            var packet = command.ToPacket(sn);
+
+            // 生成复合 Key: (OpCode << 16) | Sn
+            int key = MakeKey(command.OpCode, sn);
 
             // 创建响应等待任务
             var tcs = new TaskCompletionSource<RcspPacket>();
-            _pendingCommands[command.OpCode] = tcs;
+            _pendingCommands[key] = tcs;
 
             // 发送数据
             var bytes = packet.ToBytes();
-            XTrace.WriteLine($"[RcspDataHandler] 发送命令: OpCode=0x{command.OpCode:X2}, Length={bytes.Length}");
+            XTrace.WriteLine($"[RcspDataHandler] 发送命令: OpCode=0x{command.OpCode:X2}, Sn={sn}, Length={bytes.Length}");
 
             bool sent = await _device.WriteAsync(bytes, cancellationToken);
             if (!sent)
             {
-                _pendingCommands.TryRemove(command.OpCode, out _);
+                _pendingCommands.TryRemove(key, out _);
                 throw new IOException("发送命令失败");
             }
 
@@ -75,16 +93,16 @@ public class RcspDataHandler : IDisposable
                 var response = new TResponse();
                 response.FromPacket(responsePacket);
 
-                XTrace.WriteLine($"[RcspDataHandler] 收到响应: OpCode=0x{response.OpCode:X2}");
+                XTrace.WriteLine($"[RcspDataHandler] 收到响应: OpCode=0x{response.OpCode:X2}, Sn={response.Sn}, Status={response.Status}");
                 return response;
             }
             catch (OperationCanceledException)
             {
-                _pendingCommands.TryRemove(command.OpCode, out _);
+                _pendingCommands.TryRemove(key, out _);
 
                 if (timeoutCts.Token.IsCancellationRequested)
                 {
-                    throw new TimeoutException($"命令超时: OpCode=0x{command.OpCode:X2}, Timeout={timeoutMs}ms");
+                    throw new TimeoutException($"命令超时: OpCode=0x{command.OpCode:X2}, Sn={sn}, Timeout={timeoutMs}ms");
                 }
 
                 throw;
@@ -128,18 +146,30 @@ public class RcspDataHandler : IDisposable
                 if (packet == null)
                     break;
 
-                XTrace.WriteLine($"[RcspDataHandler] 解析数据包: OpCode=0x{packet.OpCode:X2}, IsCommand={packet.IsCommand}");
+                XTrace.WriteLine($"[RcspDataHandler] 解析数据包: OpCode=0x{packet.OpCode:X2}, IsCommand={packet.IsCommand}, PayloadLen={packet.Payload.Length}");
 
-                // 如果是响应包,使用 OpCode 匹配对应的命令(新协议无序列号)
+                // 如果是响应包，从 Payload 中提取 Sn 并匹配
                 if (!packet.IsCommand)
                 {
-                    if (_pendingCommands.TryRemove(packet.OpCode, out var tcs))
+                    // Response Payload: [Status, Sn, ...]
+                    if (packet.Payload.Length >= 2)
                     {
-                        tcs.TrySetResult(packet);
+                        byte sn = packet.Payload[1];
+                        int key = MakeKey(packet.OpCode, sn);
+                        
+                        if (_pendingCommands.TryRemove(key, out var tcs))
+                        {
+                            XTrace.WriteLine($"[RcspDataHandler] 匹配成功: OpCode=0x{packet.OpCode:X2}, Sn={sn}");
+                            tcs.TrySetResult(packet);
+                        }
+                        else
+                        {
+                            XTrace.WriteLine($"[RcspDataHandler] 未找到匹配的命令: OpCode=0x{packet.OpCode:X2}, Sn={sn}");
+                        }
                     }
                     else
                     {
-                        XTrace.WriteLine($"[RcspDataHandler] 未找到匹配的命令: OpCode=0x{packet.OpCode:X2}");
+                        XTrace.WriteLine($"[RcspDataHandler] 响应 Payload 长度不足: OpCode=0x{packet.OpCode:X2}, Len={packet.Payload.Length}");
                     }
                 }
                 else

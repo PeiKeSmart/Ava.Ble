@@ -2,13 +2,15 @@ namespace JieLi.OTA.Core.Protocols;
 
 /// <summary>RCSP 数据包</summary>
 /// <remarks>
-/// 数据包格式: AA 55 [FLAG] [SN] [OpCode] [Payload...] AD
-/// - AA 55: 固定帧头
+/// 数据包格式: FE DC BA [FLAG] [OpCode] [LEN_H] [LEN_L] [Payload...] EF
+/// - FE DC BA: 固定帧头 (3字节)
 /// - FLAG: 标志位 (bit7=是否为命令, bit6=是否需要响应)
-/// - SN: 序列号，用于匹配命令与响应
 /// - OpCode: 操作码
-/// - Payload: 数据负载（可选）
-/// - AD: 固定帧尾
+/// - LEN: Payload 长度 (2字节, 大端序)
+/// - Payload: 数据负载
+///   * Command: [Sn, ...业务参数]
+///   * Response: [Status, Sn, ...业务数据]
+/// - EF: 固定帧尾
 /// </remarks>
 public class RcspPacket
 {
@@ -36,13 +38,10 @@ public class RcspPacket
     /// <summary>标志位</summary>
     public byte Flag { get; set; }
 
-    /// <summary>序列号</summary>
-    public byte Sn { get; set; }
-
     /// <summary>操作码</summary>
     public byte OpCode { get; set; }
 
-    /// <summary>数据负载</summary>
+    /// <summary>数据负载（Command: [Sn, ...], Response: [Status, Sn, ...]）</summary>
     public byte[] Payload { get; set; } = [];
 
     /// <summary>是否为命令</summary>
