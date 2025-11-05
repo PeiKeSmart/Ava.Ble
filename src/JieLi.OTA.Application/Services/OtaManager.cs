@@ -23,6 +23,10 @@ public class OtaManager : IOtaManager
     private readonly Stopwatch _speedWatch = new();
     private bool _disposed;
 
+    private DateTime? _lastRequestTime; // 最后一次请求时间
+    private byte? _lastRequestSn;       // 最后一次请求的 Sn
+    private const int MinSameCmdE5TimeMs = 50; // 最小重复命令间隔（毫秒）
+
     private OtaState _currentState = OtaState.Idle;
     private OtaProgress _progress = new();
     private readonly Stopwatch _totalTimeWatch = new();
@@ -278,8 +282,31 @@ public class OtaManager : IOtaManager
                 return;
             }
 
+            var sn = packet.Payload[0]; // 获取序列号
             var offset = BitConverter.ToInt32(packet.Payload, 1); // 从索引1开始读取offset
             var length = BitConverter.ToUInt16(packet.Payload, 5); // 从索引5开始读取length
+
+            // ⚠️ 重复命令过滤：和小程序SDK保持一致
+            var now = DateTime.Now;
+            if (_lastRequestSn == sn && _lastRequestTime.HasValue)
+            {
+                var elapsed = (now - _lastRequestTime.Value).TotalMilliseconds;
+                if (elapsed < MinSameCmdE5TimeMs)
+                {
+                    XTrace.WriteLine($"[OtaManager] 忽略重复命令: Sn={sn}, elapsed={elapsed}ms");
+                    return;
+                }
+            }
+            _lastRequestSn = sn;
+            _lastRequestTime = now;
+
+            // ⚠️ 特殊情况：offset=0 && len=0 表示查询更新结果，不是文件块请求
+            if (offset == 0 && length == 0)
+            {
+                XTrace.WriteLine("[OtaManager] 收到查询更新结果信号 (offset=0, len=0)");
+                // TODO: 处理查询更新结果逻辑
+                return;
+            }
 
             // 从缓存中获取原始命令包（包含正确的 Sn）
             var cachedCommand = _protocol.GetCachedDeviceCommand(offset, length) ?? packet;
@@ -288,15 +315,23 @@ public class OtaManager : IOtaManager
                 XTrace.WriteLine($"[OtaManager] 警告: 未找到缓存的命令 offset={offset}, len={length}，使用当前packet");
             }
             
-            var sn = cachedCommand.Payload[0]; // 从缓存的命令中获取正确的 Sn
+            var cachedSn = cachedCommand.Payload[0]; // 从缓存的命令中获取正确的 Sn
 
             // 读取文件块
             var block = _fileService.ReadFileBlock(_firmwareData, offset, length);
 
+            // ⚠️ 参数验证：和小程序SDK保持一致
+            byte status = 0x00; // ResponseResult.STATUS_SUCCESS
+            if (block.Length == 0 && offset > 0 && length > 0)
+            {
+                status = 0x01; // ResponseResult.STATUS_INVALID_PARAM
+                XTrace.WriteLine($"[OtaManager] 文件块读取失败: offset={offset}, len={length}");
+            }
+
             // 构造响应：Status (1) + Sn (1) + offset (4) + length (2) + block data
             var responsePayload = new byte[1 + 1 + 4 + 2 + block.Length];
-            responsePayload[0] = 0x00; // Status: 成功
-            responsePayload[1] = sn;   // 使用请求中的 Sn
+            responsePayload[0] = status;      // Status
+            responsePayload[1] = cachedSn;    // 使用缓存命令中的 Sn
             BitConverter.GetBytes(offset).CopyTo(responsePayload, 2);
             BitConverter.GetBytes(length).CopyTo(responsePayload, 6);
             block.CopyTo(responsePayload, 8);

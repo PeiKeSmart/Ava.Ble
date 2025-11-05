@@ -206,8 +206,8 @@ public class RcspDataHandler : IDisposable
                 }
                 else
                 {
-                    // 处理设备主动发送的命令（如请求文件块 0xE5）
-                    // 先缓存命令，然后触发事件
+                    // 处理设备主动发送的命令
+                    // 1. 缓存文件块请求命令 (0xE5)
                     if (packet.OpCode == 0xE5 && packet.Payload.Length >= 7)
                     {
                         // Command Payload: [Sn, offset(4), length(2)]
@@ -215,7 +215,30 @@ public class RcspDataHandler : IDisposable
                         var length = BitConverter.ToUInt16(packet.Payload, 5);
                         CacheDeviceCommand(offset, length, packet);
                     }
+                    // 2. 处理设备通知文件大小命令 (0xE8) - 需要立即响应
+                    else if (packet.OpCode == 0xE8 && packet.Payload.Length >= 1)
+                    {
+                        // Command Payload: [Sn, totalSize(4), currentSize(4)?]
+                        // 需要立即构造响应并发送
+                        var sn = packet.Payload[0];
+                        
+                        // 构造响应: [Status, Sn]
+                        var responsePayload = new byte[2];
+                        responsePayload[0] = 0x00; // STATUS_SUCCESS
+                        responsePayload[1] = sn;
+                        
+                        var responsePacket = new RcspPacket
+                        {
+                            Flag = 0x00, // 响应包
+                            OpCode = 0xE8,
+                            Payload = responsePayload
+                        };
+                        
+                        XTrace.WriteLine($"[RcspDataHandler] 设备通知文件大小，立即响应: Sn={sn}");
+                        _ = _device.WriteAsync(responsePacket.ToBytes()); // 异步发送，不等待
+                    }
                     
+                    // 触发设备命令事件
                     OnDeviceCommandReceived?.Invoke(this, packet);
                 }
             }
