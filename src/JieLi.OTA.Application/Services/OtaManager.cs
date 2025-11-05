@@ -15,9 +15,11 @@ public class OtaManager : IOtaManager
     private readonly WindowsBleService _bleService;
     private readonly OtaFileService _fileService;
     private readonly ReconnectService _reconnectService;
+    private IReadyToReconnectStrategy _readyStrategy;
     
-    private BleDevice? _currentDevice;
-    private RcspProtocol? _protocol;
+    private IBluetoothDevice? _currentDevice;
+    private ulong _currentDeviceAddress; // 用于重连，避免 IBluetoothDevice 无地址属性
+    private IRcspProtocol? _protocol;
     private byte[]? _firmwareData;
     private int _sentBytes;
     private readonly Stopwatch _speedWatch = new();
@@ -49,6 +51,7 @@ public class OtaManager : IOtaManager
         _bleService = bleService;
         _fileService = fileService;
         _reconnectService = new ReconnectService(bleService);
+        _readyStrategy = new NoopReadyToReconnectStrategy();
     }
 
     /// <summary>启动 OTA 升级</summary>
@@ -91,8 +94,11 @@ public class OtaManager : IOtaManager
 
             // 2. 连接设备
             ChangeState(OtaState.Connecting);
-            _currentDevice = _bleService.GetDiscoveredDevices()
+            var selected = _bleService.GetDiscoveredDevices()
                 .FirstOrDefault(d => d.DeviceId == deviceId);
+
+            _currentDevice = selected; // BleDevice 实现了 IBluetoothDevice
+            _currentDeviceAddress = selected?.BluetoothAddress ?? 0UL;
 
             if (_currentDevice == null)
             {
@@ -149,8 +155,15 @@ public class OtaManager : IOtaManager
                     if (_currentDevice != null)
                     {
                         // 在 Windows 下协商 MTU，默认请求较大值，具体结果由平台决定
-                        var mtu = await _bleService.NegotiateMtuAsync(_currentDevice);
-                        XTrace.WriteLine($"[OtaManager] BootLoader 模式，已协商 MTU={mtu}");
+                        if (selected != null)
+                        {
+                            var mtu = await _bleService.NegotiateMtuAsync(selected);
+                            XTrace.WriteLine($"[OtaManager] BootLoader 模式，已协商 MTU={mtu}");
+                        }
+                        else
+                        {
+                            XTrace.WriteLine("[OtaManager] 当前设备不是 BleDevice，跳过 MTU 协商");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -170,7 +183,7 @@ public class OtaManager : IOtaManager
             {
                 XTrace.WriteLine("[OtaManager] 设备普通升级模式 (需要重连)");
                 // 普通升级:需要先让设备准备重连,再走后续流程
-                // TODO: 实现 readyToReconnectDevice (it() 方法) 逻辑
+                await ReadyToReconnectDeviceAsync(cancellationToken);
                 needEnterUpdateMode = false;
             }
 
@@ -239,26 +252,35 @@ public class OtaManager : IOtaManager
                 ChangeState(OtaState.WaitingReconnect);
                 XTrace.WriteLine("[OtaManager] 等待设备重连...");
 
+                // 启动重连超时计时（对应小程序SDK的 gt()）
+                StartReconnectTimeout();
+
                 var currentDevice = _currentDevice;
                 if (currentDevice == null)
                 {
+                    // 清理重连超时（对应小程序SDK的 F()）
+                    ClearReconnectTimeout();
                     return CreateErrorResult(OtaErrorCode.ERROR_CONNECTION_LOST, "设备对象为空，无法等待重连");
                 }
 
                 var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(
-                    currentDevice.BluetoothAddress,
+                    _currentDeviceAddress,
                     useNewMacMethod: true,
                     timeoutMs: Config.ReconnectTimeout,
                     cancellationToken: cancellationToken);
 
                 if (reconnectedDevice == null)
                 {
+                    // 清理重连超时（对应小程序SDK的 F()）
+                    ClearReconnectTimeout();
                     return CreateErrorResult(OtaErrorCode.ERROR_RECONNECT_TIMEOUT, "设备重连超时");
                 }
 
                 if (reconnectedDevice != null)
                 {
                     XTrace.WriteLine($"[OtaManager] 设备重连成功: {reconnectedDevice.DeviceName}");
+                    // 清理重连超时（对应小程序SDK的 F()）
+                    ClearReconnectTimeout();
                 }
             }
 
@@ -304,6 +326,54 @@ public class OtaManager : IOtaManager
         }
     }
 
+    /// <summary>
+    /// 进入“准备重连”阶段的最小骨架（对应小程序 SDK 的 it()）：
+    /// 仅记录日志并保持时序对齐，真正的重连超时在进入等待重连阶段时开启。
+    /// </summary>
+    /// <summary>
+    /// 准备进入重连阶段（对应小程序 SDK it()）。
+    /// 1) 调用策略扩展点执行设备族/模式特定动作；
+    /// 2) 可选：根据配置主动断开当前连接以加速重连（默认关闭）；
+    /// 重连超时由 WaitingReconnect 阶段统一管理。
+    /// </summary>
+    private async Task ReadyToReconnectDeviceAsync(CancellationToken cancellationToken)
+    {
+        XTrace.WriteLine("[OtaManager] 准备进入重连阶段（it()）");
+
+        if (_currentDevice != null)
+        {
+            // 设备族/模式特定策略（默认 No-Op）
+            try
+            {
+                await _readyStrategy.ExecuteAsync(_currentDevice, Config, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                XTrace.WriteLine($"[OtaManager] it() 策略执行异常: {ex.Message}");
+            }
+
+            // 可选断开：部分设备在 SDK it() 中会主动断开以加速切换
+            if (Config.EnableReadyReconnectDisconnect)
+            {
+                try
+                {
+                    XTrace.WriteLine("[OtaManager] it() 启用：主动断开当前连接以准备重连");
+                    await _currentDevice.DisconnectAsync();
+                }
+                catch (Exception ex)
+                {
+                    XTrace.WriteLine($"[OtaManager] 主动断开异常: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    /// <summary>设置自定义的准备重连策略（测试或特定机型可注入）</summary>
+    internal void SetReadyToReconnectStrategy(IReadyToReconnectStrategy strategy)
+    {
+        _readyStrategy = strategy ?? new NoopReadyToReconnectStrategy();
+    }
+
     /// <summary>创建错误结果</summary>
     private OtaResult CreateErrorResult(int errorCode, string message)
     {
@@ -337,7 +407,7 @@ public class OtaManager : IOtaManager
     }
 
     /// <summary>处理设备请求文件块事件</summary>
-    private async void OnDeviceRequestedFileBlock(object? sender, RcspPacket packet)
+    protected internal async void OnDeviceRequestedFileBlock(object? sender, RcspPacket packet)
     {
         if (_firmwareData == null || _currentDevice == null || _currentState != OtaState.TransferringFile)
         {
@@ -422,7 +492,7 @@ public class OtaManager : IOtaManager
             }
 
             // 从缓存中获取原始命令包（包含正确的 Sn）
-            var cachedCommand = _protocol?.GetCachedDeviceCommand(offset, length) ?? packet;
+            var cachedCommand = (_protocol as RcspProtocol)?.GetCachedDeviceCommand(offset, length) ?? packet;
             if (cachedCommand == packet)
             {
                 XTrace.WriteLine($"[OtaManager] 警告: 未找到缓存的命令 offset={offset}, len={length}，使用当前packet");
@@ -474,6 +544,15 @@ public class OtaManager : IOtaManager
             XTrace.WriteException(ex);
             ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"发送文件块失败: {ex.Message}");
         }
+    }
+
+    /// <summary>测试注入：仅用于单元测试，注入设备、协议与固件数据，并设置状态</summary>
+    protected internal void TestInject(IBluetoothDevice device, IRcspProtocol protocol, byte[] firmwareData, OtaState state = OtaState.TransferringFile)
+    {
+        _currentDevice = device;
+        _protocol = protocol;
+        _firmwareData = firmwareData;
+        _currentState = state;
     }
 
     /// <summary>等待传输完成</summary>
@@ -532,7 +611,10 @@ public class OtaManager : IOtaManager
         if (_protocol != null)
         {
             _protocol.DeviceRequestedFileBlock -= OnDeviceRequestedFileBlock;
-            _protocol.Dispose();
+            if (_protocol is IDisposable disp)
+            {
+                disp.Dispose();
+            }
             _protocol = null;
         }
 

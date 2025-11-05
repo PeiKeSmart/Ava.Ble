@@ -26,4 +26,10 @@ public class OtaConfig
 
     /// <summary>是否启用日志</summary>
     public bool EnableLogging { get; set; } = true;
+
+    /// <summary>
+    /// 是否在进入“准备重连”阶段主动断开当前连接（对应部分设备的 SDK it() 行为）。
+    /// 默认关闭，避免对未验证机型造成影响。
+    /// </summary>
+    public bool EnableReadyReconnectDisconnect { get; set; } = false;
 }

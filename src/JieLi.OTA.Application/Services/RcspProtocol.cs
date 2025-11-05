@@ -19,6 +19,15 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         _dataHandler = new RcspDataHandler(device);
     }
 
+    // 仅用于测试：初始化订阅但不发送 GetTargetInfo
+    public async Task InitializeAsyncForTest(CancellationToken cancellationToken = default)
+    {
+        if (_isInitialized) return;
+        var subscribed = await _dataHandler.InitializeAsync(cancellationToken);
+        if (!subscribed) throw new InvalidOperationException("无法订阅设备数据通知");
+        _isInitialized = true;
+    }
+
     /// <summary>初始化协议（获取设备信息）</summary>
     public async Task<RspDeviceInfo> InitializeAsync(string deviceId, CancellationToken cancellationToken = default)
     {
