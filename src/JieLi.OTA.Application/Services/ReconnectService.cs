@@ -49,7 +49,8 @@ public class ReconnectService
                 {
                     XTrace.WriteLine($"[ReconnectService] 发现匹配设备: {device.DeviceName}, 地址: 0x{device.BluetoothAddress:X12}");
                     reconnectedDevice = device;
-                    tcs.TrySetResult(device);
+                    // 连接设备
+                    _ = ConnectDeviceAsync(device, tcs, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -125,5 +126,27 @@ public class ReconnectService
 
         // 最低字节 +2，其余字节不变
         return (originalLowest + 2) == newLowest && originalRest == newRest;
+    }
+
+    /// <summary>连接设备</summary>
+    private async Task ConnectDeviceAsync(BleDevice device, TaskCompletionSource<BleDevice?> tcs, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var connected = await device.ConnectAsync(cancellationToken);
+            if (connected)
+            {
+                XTrace.WriteLine($"[ReconnectService] 设备连接成功: {device.DeviceName}");
+                tcs.TrySetResult(device);
+            }
+            else
+            {
+                XTrace.WriteLine($"[ReconnectService] 设备连接失败: {device.DeviceName}");
+            }
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteLine($"[ReconnectService] 设备连接异常: {device.DeviceName}, {ex.Message}");
+        }
     }
 }
