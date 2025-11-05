@@ -14,7 +14,8 @@ public interface IOtaManager
     Task<OtaResult> StartOtaAsync(string deviceId, string firmwareFilePath, CancellationToken cancellationToken = default);
 
     /// <summary>取消 OTA 升级</summary>
-    Task CancelOtaAsync();
+    /// <returns>是否成功取消（双备份模式返回true，单备份模式返回false）</returns>
+    Task<bool> CancelOtaAsync();
 
     /// <summary>OTA 进度事件</summary>
     event EventHandler<OtaProgress>? ProgressChanged;

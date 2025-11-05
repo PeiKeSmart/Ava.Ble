@@ -151,6 +151,11 @@ public class OtaManager : IOtaManager
             if (_deviceInfo.IsSupportDoubleBackup)
             {
                 XTrace.WriteLine("[OtaManager] 设备支持双备份模式");
+                
+                // 对应 SDK: this.st(null) - 双备份模式不需要重连，清空重连信息
+                _reconnectInfo = null;
+                _isWaitingForReconnect = false;
+                
                 needEnterUpdateMode = true;
             }
             else if (_deviceInfo.IsNeedBootLoader)
@@ -380,11 +385,32 @@ public class OtaManager : IOtaManager
 
         // 🔥 P0 修复1: 对应 SDK it() 内部的 this.P(6000)
         // SDK 逻辑：启动 6 秒离线等待超时（在 onDeviceDisconnect 中清除）
-        StartOfflineWaitTimeout(() =>
+        StartOfflineWaitTimeout(async () =>
         {
-            XTrace.WriteLine("[OtaManager] 设备离线等待超时（P超时）");
-            // 对应 SDK: 调用 onNeedReconnect
-            StartReconnectTimeout();
+            XTrace.WriteLine("[OtaManager] 设备离线等待超时（P超时），触发重连流程");
+            
+            // 对应 SDK P() 超时回调的完整逻辑：
+            // e.i=0,e.l=0;         - 重置进度（C#在 CleanupResources 中统一处理）
+            // const t=e.o.copy();  - 复制重连信息
+            // e.Rt(t),             - 触发 onNeedReconnect
+            // e.gt(t),             - 启动重连超时
+            // e.st(null)           - 清空重连信息
+            
+            if (_reconnectInfo != null)
+            {
+                var reconnectInfo = _reconnectInfo.Copy();  // 复制重连信息
+                _reconnectInfo = null;                       // 清空重连信息
+                _isWaitingForReconnect = false;
+                
+                StartReconnectTimeout();  // 启动重连超时
+                
+                // 触发重连流程（对应 onNeedReconnect）
+                await TriggerReconnectFlowAsync(reconnectInfo);
+            }
+            else
+            {
+                XTrace.WriteLine("[OtaManager] P超时但无重连信息，可能已处理");
+            }
         });
 
         if (_currentDevice != null && _protocol != null && _deviceInfo != null)
@@ -400,10 +426,31 @@ public class OtaManager : IOtaManager
                 await _protocol.ChangeCommunicationWayAsync(communicationWay, isSupportNewRebootWay, cancellationToken);
                 XTrace.WriteLine("[OtaManager] 切换通信方式命令已发送（对应SDK的changeCommunicationWay）");
             }
+            catch (TimeoutException ex)
+            {
+                // 🚨 重要：对应 SDK 的错误处理逻辑
+                // SDK: onError(t,s){ t!=h.ERROR_REPLY_BAD_STATUS&&t!=h.ERROR_REPLY_BAD_RESULT||e.D(t,s) }
+                // 意思是：只有 BAD_STATUS 和 BAD_RESULT 这两种错误被忽略，其他错误需要报告
+                
+                // 超时错误不是 BAD_STATUS/BAD_RESULT，应该报告
+                XTrace.WriteLine($"[OtaManager] ❌ 切换通信方式超时: {ex.Message}");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_COMMAND_TIMEOUT, $"切换通信方式超时: {ex.Message}");
+                return;
+            }
+            catch (Exception ex) when (ex.Message.Contains("BAD_STATUS") || ex.Message.Contains("BAD_RESULT"))
+            {
+                // 对应 SDK：ERROR_REPLY_BAD_STATUS 或 ERROR_REPLY_BAD_RESULT 被忽略
+                XTrace.WriteLine($"[OtaManager] 切换通信方式返回 BAD_STATUS/BAD_RESULT（SDK忽略此错误）: {ex.Message}");
+                // 继续执行，不中断流程
+            }
             catch (Exception ex)
             {
-                // 对应 SDK：错误码如果是 ERROR_REPLY_BAD_STATUS 或 ERROR_REPLY_BAD_RESULT，不报错
-                XTrace.WriteLine($"[OtaManager] 切换通信方式异常（可能正常）: {ex.Message}");
+                // 其他错误应该报告（对应SDK的逻辑）
+                XTrace.WriteLine($"[OtaManager] ❌ 切换通信方式失败: {ex.Message}");
+                ChangeState(OtaState.Failed);
+                ErrorOccurred?.Invoke(OtaErrorCode.ERROR_OTA_FAIL, $"切换通信方式失败: {ex.Message}");
+                return;
             }
 
             // 设备族/模式特定策略（默认 No-Op）
@@ -631,18 +678,55 @@ public class OtaManager : IOtaManager
     }
 
     /// <summary>取消 OTA 升级</summary>
-    public Task CancelOtaAsync()
+    /// <summary>取消 OTA 升级（对应小程序SDK的 cancelOTA）</summary>
+    public async Task<bool> CancelOtaAsync()
     {
+        // 对应 SDK: if(this.U("cancelOTA")) return !1;
         if (_currentState == OtaState.Idle || _currentState == OtaState.Completed || _currentState == OtaState.Failed)
         {
-            return Task.CompletedTask;
+            XTrace.WriteLine("[OtaManager] 当前未在 OTA 流程中，无需取消");
+            return false;
         }
 
-        XTrace.WriteLine("[OtaManager] 取消 OTA 升级");
-        ChangeState(OtaState.Failed);
-        CleanupResources();
+        // 对应 SDK: if(!this.A.isDeviceConnected())
+        if (_currentDevice == null)
+        {
+            XTrace.WriteLine("[OtaManager] 设备未连接，取消失败");
+            ErrorOccurred?.Invoke(OtaErrorCode.ERROR_CONNECTION_LOST, "设备未连接");
+            return false;
+        }
 
-        return Task.CompletedTask;
+        // 对应 SDK: if(null!=this.u&&this.u.isSupportDoubleBackup)
+        if (_deviceInfo != null && _deviceInfo.IsSupportDoubleBackup)
+        {
+            XTrace.WriteLine("[OtaManager] 双备份模式，发送退出更新模式命令");
+            
+            try
+            {
+                if (_protocol != null)
+                {
+                    // 对应 SDK: this.A.exitUpdateMode(e)
+                    // 注意：当前 IRcspProtocol 可能还没有 ExitUpdateModeAsync 方法
+                    // 暂时使用通用错误码触发取消
+                    XTrace.WriteLine("[OtaManager] TODO: 需要实现 ExitUpdateModeAsync 协议方法");
+                }
+                
+                ChangeState(OtaState.Failed);
+                CleanupResources();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                XTrace.WriteLine($"[OtaManager] 退出更新模式异常: {ex.Message}");
+                ChangeState(OtaState.Failed);
+                CleanupResources();
+                return true;  // SDK 的 onResult 和 onError 都会调用 S()，所以无论如何都返回 true
+            }
+        }
+
+        // 对应 SDK: 单备份模式不能中断
+        XTrace.WriteLine("[OtaManager] 单备份模式，OTA 进程不能被中断");
+        return false;
     }
 
     /// <summary>处理设备连接状态变更事件（对应小程序SDK的 onDeviceDisconnect）</summary>
@@ -678,47 +762,8 @@ public class OtaManager : IOtaManager
                 // 启动重连超时（对应 SDK 的 gt()）
                 StartReconnectTimeout();
 
-                try
-                {
-                    var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(
-                        reconnectInfo.DeviceAddress,
-                        useNewMacMethod: reconnectInfo.UseNewMacMethod,
-                        timeoutMs: Config.ReconnectTimeout,
-                        cancellationToken: default);
-
-                    if (reconnectedDevice != null)
-                    {
-                        _currentDevice = reconnectedDevice;
-                        _currentDeviceAddress = reconnectedDevice.BluetoothAddress;
-                        
-                        var connected = await _currentDevice.ConnectAsync();
-                        if (connected)
-                        {
-                            XTrace.WriteLine($"[OtaManager] 设备重连成功: {reconnectedDevice.DeviceName}");
-                            
-                            // 清除重连超时（对应 SDK 的 F()）
-                            ClearReconnectTimeout();
-
-                            // 处理重连后逻辑（对应 SDK 的 onDeviceInit）
-                            await HandleReconnectCompleteAsync();
-                        }
-                        else
-                        {
-                            XTrace.WriteLine("[OtaManager] 重连后连接失败");
-                            ClearReconnectTimeout();
-                        }
-                    }
-                    else
-                    {
-                        XTrace.WriteLine("[OtaManager] 重连超时");
-                        ClearReconnectTimeout();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    XTrace.WriteLine($"[OtaManager] 重连异常: {ex.Message}");
-                    ClearReconnectTimeout();
-                }
+                // 执行重连流程
+                await TriggerReconnectFlowAsync(reconnectInfo);
             }
         }
         else
@@ -726,6 +771,52 @@ public class OtaManager : IOtaManager
             // 没有重连信息，报错
             XTrace.WriteLine("[OtaManager] 设备离线且无重连信息");
             ChangeState(OtaState.Failed);
+        }
+    }
+
+    /// <summary>触发重连流程（对应 SDK 的 onNeedReconnect + WaitForReconnectAsync）</summary>
+    private async Task TriggerReconnectFlowAsync(ReconnectInfo reconnectInfo)
+    {
+        try
+        {
+            var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(
+                reconnectInfo.DeviceAddress,
+                useNewMacMethod: reconnectInfo.UseNewMacMethod,
+                timeoutMs: Config.ReconnectTimeout,
+                cancellationToken: default);
+
+            if (reconnectedDevice != null)
+            {
+                _currentDevice = reconnectedDevice;
+                _currentDeviceAddress = reconnectedDevice.BluetoothAddress;
+                
+                var connected = await _currentDevice.ConnectAsync();
+                if (connected)
+                {
+                    XTrace.WriteLine($"[OtaManager] 设备重连成功: {reconnectedDevice.DeviceName}");
+                    
+                    // 清除重连超时（对应 SDK 的 F()）
+                    ClearReconnectTimeout();
+
+                    // 处理重连后逻辑（对应 SDK 的 onDeviceInit）
+                    await HandleReconnectCompleteAsync();
+                }
+                else
+                {
+                    XTrace.WriteLine("[OtaManager] 重连后连接失败");
+                    ClearReconnectTimeout();
+                }
+            }
+            else
+            {
+                XTrace.WriteLine("[OtaManager] 重连超时");
+                ClearReconnectTimeout();
+            }
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteLine($"[OtaManager] 重连异常: {ex.Message}");
+            ClearReconnectTimeout();
         }
     }
 
@@ -971,17 +1062,20 @@ public class OtaManager : IOtaManager
     }
 
     /// <summary>启动设备离线等待超时 (对应小程序SDK的 P() 方法)</summary>
-    private void StartOfflineWaitTimeout(Action onTimeout)
+    private void StartOfflineWaitTimeout(Func<Task> onTimeoutAsync)
     {
         ClearOfflineWaitTimeout(); // 先清除旧超时 (对应 M() 方法)
         
         _offlineTimeoutCts = new CancellationTokenSource();
-        Task.Delay(Config.OfflineTimeout, _offlineTimeoutCts.Token).ContinueWith(t =>
+        Task.Delay(Config.OfflineTimeout, _offlineTimeoutCts.Token).ContinueWith(async t =>
         {
             if (!t.IsCanceled)
             {
                 XTrace.WriteLine("[OtaManager] 设备离线等待超时，触发重连");
-                onTimeout?.Invoke();
+                if (onTimeoutAsync != null)
+                {
+                    await onTimeoutAsync();
+                }
             }
         });
     }
