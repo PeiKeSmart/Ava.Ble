@@ -45,7 +45,7 @@ public class RcspProtocolTests : IDisposable
     {
         // Arrange
         await InitializeProtocol();
-        _mockDevice.SetupResponse(0xE1, BuildCanUpdatePayload(RspCanUpdate.RESULT_CAN_UPDATE));
+        _mockDevice.SetupResponse(0xE2, BuildCanUpdatePayload(RspCanUpdate.RESULT_CAN_UPDATE)); // CMD_OTA_INQUIRE_CAN_UPDATE
 
         // Act
         var canUpdate = await _protocol.InquireCanUpdateAsync(CancellationToken.None);
@@ -61,7 +61,7 @@ public class RcspProtocolTests : IDisposable
     {
         // Arrange
         await InitializeProtocol();
-        _mockDevice.SetupResponse(0xE1, BuildCanUpdatePayload(RspCanUpdate.RESULT_LOW_POWER));
+        _mockDevice.SetupResponse(0xE2, BuildCanUpdatePayload(RspCanUpdate.RESULT_LOW_POWER)); // CMD_OTA_INQUIRE_CAN_UPDATE
 
         // Act
         var canUpdate = await _protocol.InquireCanUpdateAsync(CancellationToken.None);
@@ -77,7 +77,7 @@ public class RcspProtocolTests : IDisposable
     {
         // Arrange
         await InitializeProtocol();
-        _mockDevice.SetupResponse(0xE0, BuildFileOffsetPayload(1024));
+        _mockDevice.SetupResponse(0xE1, BuildFileOffsetPayload(1024)); // CMD_OTA_READ_FILE_OFFSET
 
         // Act
         var fileOffset = await _protocol.ReadFileOffsetAsync(CancellationToken.None);
@@ -92,7 +92,7 @@ public class RcspProtocolTests : IDisposable
     {
         // Arrange
         await InitializeProtocol();
-        _mockDevice.SetupResponse(0xE2, BuildCanUpdatePayload(RspCanUpdate.RESULT_CAN_UPDATE));
+        _mockDevice.SetupResponse(0xE3, BuildCanUpdatePayload(RspCanUpdate.RESULT_CAN_UPDATE)); // CMD_OTA_ENTER_UPDATE_MODE
 
         // Act
         var success = await _protocol.EnterUpdateModeAsync(CancellationToken.None);
@@ -106,10 +106,10 @@ public class RcspProtocolTests : IDisposable
     {
         // Arrange
         await InitializeProtocol();
-        _mockDevice.SetupResponse(0xE7, BuildFileOffsetPayload(0));
+        _mockDevice.SetupResponse(0xE8, BuildFileOffsetPayload(0)); // CMD_OTA_NOTIFY_FILE_SIZE
 
         // Act
-        var success = await _protocol.NotifyFileSizeAsync(102400, CancellationToken.None);
+        var success = await _protocol.NotifyFileSizeAsync(1024, CancellationToken.None);
 
         // Assert
         Assert.True(success);
@@ -157,11 +157,11 @@ public class RcspProtocolTests : IDisposable
 
         public void SetupResponse(byte opCode, byte[] payload)
         {
-            // 构建响应包（Sn 会在 WriteAsync 中动态设置）
+            // 构建响应包(新协议格式无 Sn 字段)
+            // 响应包: 非命令(bit7=0)、不需响应(bit6=0)、响应标志(bit0=1)
             var packet = new RcspPacket
             {
-                Flag = 0x00, // 响应标志
-                Sn = 1,      // 临时值，实际会被替换
+                Flag = 0x01, // 响应标志
                 OpCode = opCode,
                 Payload = payload
             };
@@ -191,6 +191,7 @@ public class RcspProtocolTests : IDisposable
         {
             if (!_isSubscribed || _dataCallback == null)
             {
+                System.Diagnostics.Debug.WriteLine($"[Mock] WriteAsync 拒绝: IsSubscribed={_isSubscribed}, HasCallback={_dataCallback != null}");
                 return Task.FromResult(false);
             }
 
@@ -201,23 +202,32 @@ public class RcspProtocolTests : IDisposable
                 
                 try
                 {
+                    System.Diagnostics.Debug.WriteLine($"[Mock] 收到数据: {BitConverter.ToString(data)}");
                     var packet = RcspPacket.Parse(data);
+                    if (packet == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Mock] 解析失败");
+                        return;
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"[Mock] 解析成功: OpCode=0x{packet.OpCode:X2}");
+                    
                     if (_responses.TryGetValue(packet.OpCode, out var responseData))
                     {
-                        // 更新响应包的序列号以匹配请求
-                        var responsePacket = RcspPacket.Parse(responseData);
-                        responsePacket.Sn = packet.Sn;
-                        var updatedResponse = responsePacket.ToBytes();
-                        
-                        // 触发回调
-                        _dataCallback?.Invoke(updatedResponse);
-                        DataReceived?.Invoke(this, updatedResponse);
+                        System.Diagnostics.Debug.WriteLine($"[Mock] 发送响应: {BitConverter.ToString(responseData)}");
+                        // 新协议无需更新序列号,直接发送响应
+                        _dataCallback?.Invoke(responseData);
+                        DataReceived?.Invoke(this, responseData);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Mock] 未找到OpCode=0x{packet.OpCode:X2}的响应, 已配置: {string.Join(",", _responses.Keys.Select(k => $"0x{k:X2}"))}");
                     }
                 }
                 catch (Exception ex)
                 {
                     // 测试中的异常
-                    System.Diagnostics.Debug.WriteLine($"Mock device error: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[Mock] 错误: {ex.Message}\n{ex.StackTrace}");
                 }
             });
 

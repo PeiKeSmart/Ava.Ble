@@ -10,7 +10,7 @@ public class RcspParserTests
     {
         // Arrange
         var parser = new RcspParser();
-        byte[] data = [0xAA, 0x55, 0xC0, 0x01, 0x02, 0xAD];
+        byte[] data = [0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00, 0xEF];
         
         // Act
         parser.AddData(data);
@@ -19,7 +19,6 @@ public class RcspParserTests
         // Assert
         Assert.NotNull(packet);
         Assert.Equal(0xC0, packet.Flag);
-        Assert.Equal(1, packet.Sn);
         Assert.Equal(0x02, packet.OpCode);
     }
 
@@ -28,9 +27,9 @@ public class RcspParserTests
     {
         // Arrange
         var parser = new RcspParser();
-        byte[] part1 = [0xAA, 0x55, 0xC0];
-        byte[] part2 = [0x01, 0x02];
-        byte[] part3 = [0xAD];
+        byte[] part1 = [0xFE, 0xDC, 0xBA, 0xC0];
+        byte[] part2 = [0x02, 0x00, 0x00];
+        byte[] part3 = [0xEF];
         
         // Act
         parser.AddData(part1);
@@ -46,7 +45,7 @@ public class RcspParserTests
         
         // Assert
         Assert.NotNull(packet3);
-        Assert.Equal(0x01, packet3.Sn);
+        Assert.Equal(0x02, packet3.OpCode);
     }
 
     [Fact(DisplayName = "TryParse 应能解析多个连续的包")]
@@ -55,8 +54,8 @@ public class RcspParserTests
         // Arrange
         var parser = new RcspParser();
         byte[] data = [
-            0xAA, 0x55, 0xC0, 0x01, 0x02, 0xAD,  // 包1
-            0xAA, 0x55, 0x40, 0x02, 0xE0, 0xAD   // 包2
+            0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00, 0xEF,  // 包1
+            0xFE, 0xDC, 0xBA, 0x40, 0xE1, 0x00, 0x00, 0xEF   // 包2
         ];
         
         // Act
@@ -68,10 +67,10 @@ public class RcspParserTests
         
         // Assert
         Assert.NotNull(packet1);
-        Assert.Equal(1, packet1.Sn);
+        Assert.Equal(0x02, packet1.OpCode);
         
         Assert.NotNull(packet2);
-        Assert.Equal(2, packet2.Sn);
+        Assert.Equal(0xE1, packet2.OpCode);
         
         Assert.Null(packet3); // 没有更多包
     }
@@ -82,8 +81,8 @@ public class RcspParserTests
         // Arrange
         var parser = new RcspParser();
         byte[] data = [
-            0x11, 0x22, 0x33,                    // 无效数据
-            0xAA, 0x55, 0xC0, 0x01, 0x02, 0xAD   // 有效包
+            0x11, 0x22, 0x33,                                // 无效数据
+            0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00, 0xEF   // 有效包
         ];
         
         // Act
@@ -92,7 +91,7 @@ public class RcspParserTests
         
         // Assert
         Assert.NotNull(packet);
-        Assert.Equal(1, packet.Sn);
+        Assert.Equal(0x02, packet.OpCode);
     }
 
     [Fact(DisplayName = "TryParse 未找到帧尾应等待更多数据")]
@@ -100,14 +99,14 @@ public class RcspParserTests
     {
         // Arrange
         var parser = new RcspParser();
-        byte[] data = [0xAA, 0x55, 0xC0, 0x01, 0x02]; // 缺少帧尾
+        byte[] data = [0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00]; // 缺少帧尾
         
         // Act
         parser.AddData(data);
         var packet1 = parser.TryParse();
         
         // 补充帧尾
-        parser.AddData([0xAD]);
+        parser.AddData([0xEF]);
         var packet2 = parser.TryParse();
         
         // Assert
@@ -120,7 +119,7 @@ public class RcspParserTests
     {
         // Arrange
         var parser = new RcspParser();
-        parser.AddData([0xAA, 0x55, 0xC0]);
+        parser.AddData([0xFE, 0xDC, 0xBA, 0xC0]);
         Assert.True(parser.BufferSize > 0);
         
         // Act
@@ -135,7 +134,7 @@ public class RcspParserTests
     {
         // Arrange
         var parser = new RcspParser();
-        ReadOnlySpan<byte> data = stackalloc byte[] { 0xAA, 0x55, 0xC0, 0x01, 0x02, 0xAD };
+        ReadOnlySpan<byte> data = stackalloc byte[] { 0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00, 0xEF };
         
         // Act
         parser.AddData(data);
@@ -143,7 +142,7 @@ public class RcspParserTests
         
         // Assert
         Assert.NotNull(packet);
-        Assert.Equal(1, packet.Sn);
+        Assert.Equal(0x02, packet.OpCode);
     }
 
     [Fact(DisplayName = "BufferSize 应正确返回缓冲区大小")]
@@ -155,11 +154,11 @@ public class RcspParserTests
         // Act & Assert
         Assert.Equal(0, parser.BufferSize);
         
-        parser.AddData([0xAA, 0x55, 0xC0]);
-        Assert.Equal(3, parser.BufferSize);
+        parser.AddData([0xFE, 0xDC, 0xBA, 0xC0, 0x02]);
+        Assert.Equal(5, parser.BufferSize);
         
-        parser.AddData([0x01, 0x02, 0xAD]);
-        Assert.Equal(6, parser.BufferSize);
+        parser.AddData([0x00, 0x00, 0xEF]);
+        Assert.Equal(8, parser.BufferSize);
         
         parser.TryParse();
         Assert.Equal(0, parser.BufferSize); // 解析后应清空

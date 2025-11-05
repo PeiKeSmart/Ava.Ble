@@ -14,9 +14,8 @@ public abstract class RcspCommand
     protected abstract byte[] SerializePayload();
 
     /// <summary>转换为 RCSP 数据包</summary>
-    /// <param name="sn">序列号</param>
     /// <returns>RCSP 数据包</returns>
-    public RcspPacket ToPacket(byte sn)
+    public RcspPacket ToPacket()
     {
         byte flag = RcspPacket.FLAG_IS_COMMAND;
         if (NeedResponse)
@@ -27,7 +26,6 @@ public abstract class RcspCommand
         return new RcspPacket
         {
             Flag = flag,
-            Sn = sn,
             OpCode = OpCode,
             Payload = SerializePayload()
         };

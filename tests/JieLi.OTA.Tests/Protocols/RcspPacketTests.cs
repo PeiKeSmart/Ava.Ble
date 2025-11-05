@@ -12,7 +12,6 @@ public class RcspPacketTests
         var packet = new RcspPacket
         {
             Flag = 0xC0,
-            Sn = 1,
             OpCode = 0x02,
             Payload = [0x01, 0x02, 0x03]
         };
@@ -21,16 +20,18 @@ public class RcspPacketTests
         var bytes = packet.ToBytes();
         
         // Assert
-        Assert.Equal(9, bytes.Length); // 6 + 3
-        Assert.Equal(0xAA, bytes[0]); // 帧头1
-        Assert.Equal(0x55, bytes[1]); // 帧头2
-        Assert.Equal(0xC0, bytes[2]); // FLAG
-        Assert.Equal(1, bytes[3]);    // SN
+        Assert.Equal(11, bytes.Length); // 8 + 3
+        Assert.Equal(0xFE, bytes[0]); // 帧头1
+        Assert.Equal(0xDC, bytes[1]); // 帧头2
+        Assert.Equal(0xBA, bytes[2]); // 帧头3
+        Assert.Equal(0xC0, bytes[3]); // FLAG
         Assert.Equal(0x02, bytes[4]); // OpCode
-        Assert.Equal(0x01, bytes[5]); // Payload[0]
-        Assert.Equal(0x02, bytes[6]); // Payload[1]
-        Assert.Equal(0x03, bytes[7]); // Payload[2]
-        Assert.Equal(0xAD, bytes[8]); // 帧尾
+        Assert.Equal(0x00, bytes[5]); // Length High
+        Assert.Equal(0x03, bytes[6]); // Length Low (3 bytes)
+        Assert.Equal(0x01, bytes[7]); // Payload[0]
+        Assert.Equal(0x02, bytes[8]); // Payload[1]
+        Assert.Equal(0x03, bytes[9]); // Payload[2]
+        Assert.Equal(0xEF, bytes[10]); // 帧尾
     }
 
     [Fact(DisplayName = "ToBytes 无 Payload 应生成最小包")]
@@ -40,28 +41,29 @@ public class RcspPacketTests
         var packet = new RcspPacket
         {
             Flag = 0xC0,
-            Sn = 5,
-            OpCode = 0xE0
+            OpCode = 0xE1
         };
         
         // Act
         var bytes = packet.ToBytes();
         
         // Assert
-        Assert.Equal(6, bytes.Length);
-        Assert.Equal(0xAA, bytes[0]);
-        Assert.Equal(0x55, bytes[1]);
-        Assert.Equal(0xC0, bytes[2]);
-        Assert.Equal(5, bytes[3]);
-        Assert.Equal(0xE0, bytes[4]);
-        Assert.Equal(0xAD, bytes[5]);
+        Assert.Equal(8, bytes.Length);
+        Assert.Equal(0xFE, bytes[0]); // 帧头1
+        Assert.Equal(0xDC, bytes[1]); // 帧头2
+        Assert.Equal(0xBA, bytes[2]); // 帧头3
+        Assert.Equal(0xC0, bytes[3]); // FLAG
+        Assert.Equal(0xE1, bytes[4]); // OpCode
+        Assert.Equal(0x00, bytes[5]); // Length High
+        Assert.Equal(0x00, bytes[6]); // Length Low
+        Assert.Equal(0xEF, bytes[7]); // 帧尾
     }
 
     [Fact(DisplayName = "Parse 应正确解析有效数据包")]
     public void Parse_ShouldParseValidPacket()
     {
         // Arrange
-        byte[] data = [0xAA, 0x55, 0xC0, 0x01, 0x02, 0x01, 0x02, 0x03, 0xAD];
+        byte[] data = [0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x03, 0x01, 0x02, 0x03, 0xEF];
         
         // Act
         var packet = RcspPacket.Parse(data);
@@ -69,7 +71,6 @@ public class RcspPacketTests
         // Assert
         Assert.NotNull(packet);
         Assert.Equal(0xC0, packet.Flag);
-        Assert.Equal(1, packet.Sn);
         Assert.Equal(0x02, packet.OpCode);
         Assert.Equal(3, packet.Payload.Length);
         Assert.Equal(0x01, packet.Payload[0]);
@@ -81,7 +82,7 @@ public class RcspPacketTests
     public void Parse_ShouldRejectTooShortData()
     {
         // Arrange
-        byte[] data = [0xAA, 0x55, 0xC0];
+        byte[] data = [0xFE, 0xDC, 0xBA, 0xC0];
         
         // Act
         var packet = RcspPacket.Parse(data);
@@ -94,7 +95,7 @@ public class RcspPacketTests
     public void Parse_ShouldRejectInvalidHeader()
     {
         // Arrange
-        byte[] data = [0xAB, 0x55, 0xC0, 0x01, 0x02, 0xAD];
+        byte[] data = [0xFE, 0xDC, 0xBB, 0xC0, 0x02, 0x00, 0x00, 0xEF];
         
         // Act
         var packet = RcspPacket.Parse(data);
@@ -107,7 +108,7 @@ public class RcspPacketTests
     public void Parse_ShouldRejectInvalidTail()
     {
         // Arrange
-        byte[] data = [0xAA, 0x55, 0xC0, 0x01, 0x02, 0xAE];
+        byte[] data = [0xFE, 0xDC, 0xBA, 0xC0, 0x02, 0x00, 0x00, 0xEE]; // 错误的帧尾
         
         // Act
         var packet = RcspPacket.Parse(data);
@@ -145,7 +146,6 @@ public class RcspPacketTests
         var original = new RcspPacket
         {
             Flag = 0xC0,
-            Sn = 123,
             OpCode = 0xE5,
             Payload = [0x11, 0x22, 0x33, 0x44, 0x55]
         };
@@ -157,8 +157,8 @@ public class RcspPacketTests
         // Assert
         Assert.NotNull(parsed);
         Assert.Equal(original.Flag, parsed.Flag);
-        Assert.Equal(original.Sn, parsed.Sn);
         Assert.Equal(original.OpCode, parsed.OpCode);
+        Assert.Equal(original.Payload.Length, parsed.Payload.Length);
         Assert.Equal(original.Payload, parsed.Payload);
     }
 }
