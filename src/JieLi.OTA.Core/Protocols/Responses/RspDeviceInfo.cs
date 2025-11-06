@@ -44,8 +44,14 @@ public class RspDeviceInfo : RcspResponse
     /// <summary>设备蓝牙 MAC 地址</summary>
     public string BleMac { get; set; } = string.Empty;
 
-    /// <summary>通信方式（0x01=单备份, 0x02=双备份）</summary>
-    public byte CommunicationWay { get; set; }
+    /// <summary>通信方式（对应小程序SDK的 case 3 第一个字节）</summary>
+    /// <remarks>
+    /// 0 = BLE (蓝牙低功耗)
+    /// 1 = SPP (串口协议)
+    /// 2 = USB
+    /// 默认 0 (BLE)
+    /// </remarks>
+    public byte CommunicationWay { get; set; } = 0;
 
     /// <summary>是否支持新的重启广播方式（对应小程序SDK的 isSupportNewRebootWay）</summary>
     /// <remarks>
@@ -89,6 +95,16 @@ public class RspDeviceInfo : RcspResponse
                     case 2: // 固件版本字符串
                         if (length > 0)
                             VersionName = System.Text.Encoding.UTF8.GetString(value);
+                        break;
+
+                    case 3: // Platform和CommunicationWay (对应SDK的 case 3)
+                        // SDK: s.length>1&&(this.platform=s[0],this.license=c(s.slice(1)));
+                        // ⚠️ 第一个字节是CommunicationWay(0=BLE, 1=SPP, 2=USB)
+                        if (length >= 1)
+                        {
+                            CommunicationWay = value[0];
+                            // value[1..]是license字符串(可选,此处暂不解析)
+                        }
                         break;
 
                     case 5: // 版本号 (2字节)

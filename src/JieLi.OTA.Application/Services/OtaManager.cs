@@ -136,6 +136,11 @@ public class OtaManager : IOtaManager
 
             XTrace.WriteLine($"[OtaManager] 设备连接成功: {_currentDevice.DeviceName}");
 
+            // ⚠️ 修复触发时机:对应SDK的_(),在设备连接成功后立即触发onStartOTA
+            // SDK: startOTA() → v(config) → m.callback=e → _() → onStartOTA()
+            OtaStarted?.Invoke(this, EventArgs.Empty);
+            XTrace.WriteLine("[OtaManager] 触发 OtaStarted 事件");
+
             // 3. 初始化协议（获取设备信息）
             ChangeState(OtaState.GettingDeviceInfo);
             _protocol = new RcspProtocol(_currentDevice);
@@ -145,10 +150,6 @@ public class OtaManager : IOtaManager
 
             _deviceInfo = await _protocol.InitializeAsync(deviceId, cancellationToken);
             XTrace.WriteLine($"[OtaManager] 设备信息: {_deviceInfo}");
-
-            // 触发 OTA 启动事件（对应 SDK 的 _() → onStartOTA()）
-            OtaStarted?.Invoke(this, EventArgs.Empty);
-            XTrace.WriteLine("[OtaManager] 触发 OtaStarted 事件");
 
             // 4. 查询是否可更新
             ChangeState(OtaState.GettingDeviceInfo);
@@ -161,61 +162,166 @@ public class OtaManager : IOtaManager
             XTrace.WriteLine("[OtaManager] 设备支持更新");
 
             // ⚠️ 4.5. 根据设备信息决定升级流程 (对应小程序SDK的 H() 方法)
-            // 决策树:
-            //   if (isSupportDoubleBackup) → enterUpdateMode + startTransfer
-            //   else if (isNeedBootLoader) → changeReceiveMtu + startCommandTimeout + wait
-            //   else if (isMandatoryUpgrade) → enterUpdateMode + startTransfer
-            //   else → readyToReconnectDevice
-            bool needEnterUpdateMode;
+            // SDK的H()决策树（完全一致）:
+            //   if (isSupportDoubleBackup) → st(null) + N() → 仅进入更新模式+启动超时,等待设备主动请求
+            //   else if (isNeedBootLoader) → changeReceiveMtu() + J() → 仅改MTU+启动超时,等待设备主动请求
+            //   else if (isMandatoryUpgrade) → N() → 仅进入更新模式+启动超时,等待设备主动请求
+            //   else → it() → 准备重连+启动6秒离线等待+发changeCommunicationWay命令,立即返回
 
             if (_deviceInfo.IsSupportDoubleBackup)
             {
-                XTrace.WriteLine("[OtaManager] 设备支持双备份模式");
+                XTrace.WriteLine("[OtaManager] 🔵 设备支持双备份模式 → 进入更新模式后等待设备主动请求");
                 
                 // 对应 SDK: this.st(null) - 双备份模式不需要重连，清空重连信息
                 _reconnectInfo = null;
                 _isWaitingForReconnect = false;
                 
-                needEnterUpdateMode = true;
+                // 进入更新模式 (对应SDK的N()方法)
+                ChangeState(OtaState.EnteringUpdateMode);
+                var enterSuccess = await _protocol.EnterUpdateModeAsync(cancellationToken);
+                if (!enterSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
+                }
+                
+                XTrace.WriteLine("[OtaManager] ✅ 已进入双备份更新模式");
+                
+                // 对应SDK N()成功后调用this.J() - 启动命令超时
+                StartCommandTimeout();
+                
+                // ⚠️ SDK的N()成功后**仅启动超时,不主动读偏移/传输**
+                // 等待设备主动发送CmdNotifyUpdateFileSize或CmdReadFileBlock
+                
+                ChangeState(OtaState.TransferringFile);
+                _speedWatch.Restart();
+                XTrace.WriteLine("[OtaManager] 等待设备主动请求文件块(双备份模式)...");
+                
+                // 等待传输完成或超时
+                var transferTimeout = TimeSpan.FromMinutes(10);
+                var transferTask = WaitForTransferCompleteAsync(cancellationToken);
+                var completedTask = await Task.WhenAny(transferTask, Task.Delay(transferTimeout, cancellationToken));
+
+                if (completedTask != transferTask)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "固件传输超时");
+                }
+
+                var transferSuccess = await transferTask;
+                if (!transferSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "固件传输失败");
+                }
+                
+                _speedWatch.Stop();
+                XTrace.WriteLine("[OtaManager] ✅ 双备份模式固件传输完成");
+                
+                // 双备份模式传输完成后,继续等待设备重连(设备重启应用固件)
+                // (跳转到后续"等待设备重连"统一流程)
             }
             else if (_deviceInfo.IsNeedBootLoader)
             {
-                XTrace.WriteLine("[OtaManager] 设备需要 BootLoader 模式");
-                // 与小程序 SDK 一致：进入 BootLoader 需要调整接收 MTU，以适配后续传输
+                XTrace.WriteLine("[OtaManager] 🟡 设备需要BootLoader模式 → 改MTU+启动超时,等待设备主动通知");
+                
+                // 协商MTU (对应SDK的this.A.changeReceiveMtu())
                 try
                 {
-                    if (_currentDevice != null)
+                    if (_currentDevice != null && selected != null)
                     {
-                        // 在 Windows 下协商 MTU，默认请求较大值，具体结果由平台决定
-                        if (selected != null)
-                        {
-                            var mtu = await _bleService.NegotiateMtuAsync(selected);
-                            XTrace.WriteLine($"[OtaManager] BootLoader 模式，已协商 MTU={mtu}");
-                        }
-                        else
-                        {
-                            XTrace.WriteLine("[OtaManager] 当前设备不是 BleDevice，跳过 MTU 协商");
-                        }
+                        var mtu = await _bleService.NegotiateMtuAsync(selected);
+                        XTrace.WriteLine($"[OtaManager] BootLoader模式,已协商MTU={mtu}");
+                    }
+                    else
+                    {
+                        XTrace.WriteLine("[OtaManager] 当前设备不是BleDevice,跳过MTU协商");
                     }
                 }
                 catch (Exception ex)
                 {
-                    // MTU 协商失败不阻断流程，仅记录日志（与 SDK 的容错一致）
-                    XTrace.WriteLine($"[OtaManager] MTU 协商失败: {ex.Message}");
+                    XTrace.WriteLine($"[OtaManager] MTU协商失败(可忽略): {ex.Message}");
                 }
-                // ⚠️ 与 SDK 保持一致：BootLoader 模式只启动命令超时，不启动离线等待超时
-                // SDK: this.A.changeReceiveMtu(), this.J()
-                needEnterUpdateMode = false;
-                StartCommandTimeout(); // 启动命令超时监控
+                
+                // 对应SDK的this.J() - 启动命令超时
+                StartCommandTimeout();
+                
+                // ⚠️ SDK的H()在BootLoader分支**仅改MTU+启动超时,然后立即返回**
+                // 不执行后续的ReadFileOffset/EnterUpdateMode/传输等操作
+                // 等待设备主动发送CmdNotifyUpdateFileSize或CmdReadFileBlock命令
+                
+                ChangeState(OtaState.TransferringFile);
+                _speedWatch.Restart();
+                XTrace.WriteLine("[OtaManager] BootLoader模式已就绪,等待设备主动请求文件块...");
+                
+                // 等待传输完成或超时
+                var transferTimeout = TimeSpan.FromMinutes(10);
+                var transferTask = WaitForTransferCompleteAsync(cancellationToken);
+                var completedTask = await Task.WhenAny(transferTask, Task.Delay(transferTimeout, cancellationToken));
+
+                if (completedTask != transferTask)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "固件传输超时");
+                }
+
+                var transferSuccess = await transferTask;
+                if (!transferSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "固件传输失败");
+                }
+                
+                _speedWatch.Stop();
+                XTrace.WriteLine("[OtaManager] ✅ BootLoader模式固件传输完成");
+                
+                // BootLoader模式传输完成后,继续等待设备重连
+                // (跳转到后续"等待设备重连"统一流程)
             }
             else if (_deviceInfo.IsMandatoryUpgrade)
             {
-                XTrace.WriteLine("[OtaManager] 设备强制升级模式");
-                needEnterUpdateMode = true;
+                XTrace.WriteLine("[OtaManager] 🟠 设备强制升级模式 → 进入更新模式后等待设备主动请求");
+                
+                // 进入更新模式 (对应SDK的N()方法)
+                ChangeState(OtaState.EnteringUpdateMode);
+                var enterSuccess = await _protocol.EnterUpdateModeAsync(cancellationToken);
+                if (!enterSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
+                }
+                
+                XTrace.WriteLine("[OtaManager] ✅ 已进入强制升级更新模式");
+                
+                // 对应SDK N()成功后调用this.J() - 启动命令超时
+                StartCommandTimeout();
+                
+                // ⚠️ SDK的N()成功后**仅启动超时,不主动读偏移/传输**
+                // 等待设备主动发送CmdNotifyUpdateFileSize或CmdReadFileBlock
+                
+                ChangeState(OtaState.TransferringFile);
+                _speedWatch.Restart();
+                XTrace.WriteLine("[OtaManager] 等待设备主动请求文件块(强制升级模式)...");
+                
+                // 等待传输完成或超时
+                var transferTimeout = TimeSpan.FromMinutes(10);
+                var transferTask = WaitForTransferCompleteAsync(cancellationToken);
+                var completedTask = await Task.WhenAny(transferTask, Task.Delay(transferTimeout, cancellationToken));
+
+                if (completedTask != transferTask)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "固件传输超时");
+                }
+
+                var transferSuccess = await transferTask;
+                if (!transferSuccess)
+                {
+                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "固件传输失败");
+                }
+                
+                _speedWatch.Stop();
+                XTrace.WriteLine("[OtaManager] ✅ 强制升级模式固件传输完成");
+                
+                // 强制升级模式传输完成后,继续等待设备重连
+                // (跳转到后续"等待设备重连"统一流程)
             }
             else
             {
-                XTrace.WriteLine("[OtaManager] 设备普通升级模式 (需要重连)");
+                XTrace.WriteLine("[OtaManager] 🔴 设备普通升级模式(单备份需重连) → 调用it()准备重连,立即返回");
                 
                 // 设置重连信息（对应 SDK 的 this.st(t)）
                 _reconnectInfo = new ReconnectInfo
@@ -229,8 +335,8 @@ public class OtaManager : IOtaManager
                 NeedReconnect?.Invoke(this, _reconnectInfo);
                 XTrace.WriteLine($"[OtaManager] 触发 NeedReconnect 事件: {_reconnectInfo.DeviceAddress:X12}");
 
-                // 🔥 P1 修复：完全事件驱动，不同步等待
-                // 对应 SDK：it() 立即返回，重连由 onDeviceDisconnect → onNeedReconnect 事件链触发
+                // 🔥 完全事件驱动：对应SDK的it()立即返回
+                // 重连由 onDeviceDisconnect → onNeedReconnect 事件链触发
                 
                 // 调用 it() 准备重连，启动 6 秒离线等待
                 await ReadyToReconnectDeviceAsync(cancellationToken);
@@ -254,56 +360,7 @@ public class OtaManager : IOtaManager
                 };
             }
 
-            // 5. 读取文件偏移（断点续传）
-            ChangeState(OtaState.ReadingFileOffset);
-            var fileOffset = await _protocol.ReadFileOffsetAsync(cancellationToken);
-            _sentBytes = (int)fileOffset.Offset;
-
-            if (_sentBytes > 0)
-            {
-                XTrace.WriteLine($"[OtaManager] 检测到断点续传，从偏移 {_sentBytes} 开始");
-            }
-
-            // 6. 进入更新模式 (仅在需要时)
-            if (needEnterUpdateMode)
-            {
-                ChangeState(OtaState.EnteringUpdateMode);
-                var enterSuccess = await _protocol.EnterUpdateModeAsync(cancellationToken);
-                if (!enterSuccess)
-                {
-                    return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "进入更新模式失败");
-                }
-
-                XTrace.WriteLine("[OtaManager] 已进入更新模式");
-                
-                // 对应 SDK N() 方法：成功后启动命令超时（对应 t.J()）
-                StartCommandTimeout();
-            }
-
-            // 7. 开始传输固件数据
-            // 对应 SDK：进入更新模式后，等待设备主动请求文件块（通过 CmdReadFileBlock）
-            // 设备也可能主动通知文件大小（通过 CmdNotifyUpdateFileSize）
-            ChangeState(OtaState.TransferringFile);
-            _speedWatch.Restart();
-
-            // 等待设备请求文件块（通过事件处理）
-            XTrace.WriteLine("[OtaManager] 等待设备请求文件块...");
-
-            // 等待传输完成或超时
-            var transferTimeout = TimeSpan.FromMinutes(10); // 默认10分钟
-            var transferTask = WaitForTransferCompleteAsync(cancellationToken);
-            var completedTask = await Task.WhenAny(transferTask, Task.Delay(transferTimeout, cancellationToken));
-
-            if (completedTask != transferTask)
-            {
-                return CreateErrorResult(OtaErrorCode.ERROR_COMMAND_TIMEOUT, "固件传输超时");
-            }
-
-            var transferSuccess = await transferTask;
-            if (!transferSuccess)
-            {
-                return CreateErrorResult(OtaErrorCode.ERROR_OTA_FAIL, "固件传输失败");
-            }
+            // ⚠️ 执行到这里说明是双备份/BootLoader/强制升级模式之一,且传输已完成
 
             _speedWatch.Stop();
             XTrace.WriteLine("[OtaManager] 固件传输完成");
