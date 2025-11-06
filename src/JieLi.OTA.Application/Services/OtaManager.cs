@@ -45,10 +45,26 @@ public class OtaManager : IOtaManager
     
     public OtaConfig Config { get; set; } = new();
     
+    /// <summary>OTA状态变化事件</summary>
     public event EventHandler<OtaState>? StateChanged;
+    
+    /// <summary>OTA进度变化事件（对应SDK的 onProgress）</summary>
     public event EventHandler<OtaProgress>? ProgressChanged;
     
-    private event Action<int, string>? ErrorOccurred;
+    /// <summary>OTA启动事件（对应SDK的 onStartOTA）</summary>
+    public event EventHandler? OtaStarted;
+    
+    /// <summary>OTA成功完成事件（对应SDK的 onStopOTA）</summary>
+    public event EventHandler? OtaStopped;
+    
+    /// <summary>OTA取消事件（对应SDK的 onCancelOTA）</summary>
+    public event EventHandler? OtaCanceled;
+    
+    /// <summary>需要重连事件（对应SDK的 onNeedReconnect）</summary>
+    public event EventHandler<ReconnectInfo>? NeedReconnect;
+    
+    /// <summary>错误发生事件（对应SDK的 onError）</summary>
+    public event Action<int, string>? ErrorOccurred;
 
     public OtaManager(WindowsBleService bleService, OtaFileService fileService)
     {
@@ -130,6 +146,10 @@ public class OtaManager : IOtaManager
             _deviceInfo = await _protocol.InitializeAsync(deviceId, cancellationToken);
             XTrace.WriteLine($"[OtaManager] 设备信息: {_deviceInfo}");
 
+            // 触发 OTA 启动事件（对应 SDK 的 _() → onStartOTA()）
+            OtaStarted?.Invoke(this, EventArgs.Empty);
+            XTrace.WriteLine("[OtaManager] 触发 OtaStarted 事件");
+
             // 4. 查询是否可更新
             ChangeState(OtaState.GettingDeviceInfo);
             var canUpdate = await _protocol.InquireCanUpdateAsync(cancellationToken);
@@ -204,6 +224,10 @@ public class OtaManager : IOtaManager
                     UseNewMacMethod = true
                 };
                 _isWaitingForReconnect = true;
+
+                // 触发需要重连事件（对应 SDK 的 Rt(t) → onNeedReconnect(t)）
+                NeedReconnect?.Invoke(this, _reconnectInfo);
+                XTrace.WriteLine($"[OtaManager] 触发 NeedReconnect 事件: {_reconnectInfo.DeviceAddress:X12}");
 
                 // 🔥 P1 修复：完全事件驱动，不同步等待
                 // 对应 SDK：it() 立即返回，重连由 onDeviceDisconnect → onNeedReconnect 事件链触发
@@ -336,6 +360,10 @@ public class OtaManager : IOtaManager
             ProgressChanged?.Invoke(this, _progress);
             
             XTrace.WriteLine("[OtaManager] OTA 升级成功完成！");
+
+            // 触发 OTA 成功完成事件（对应 SDK 的 q() → onStopOTA()）
+            OtaStopped?.Invoke(this, EventArgs.Empty);
+            XTrace.WriteLine("[OtaManager] 触发 OtaStopped 事件");
 
             return new OtaResult
             {
@@ -749,6 +777,11 @@ public class OtaManager : IOtaManager
                 }
                 
                 ChangeState(OtaState.Failed);
+                
+                // 触发 OTA 取消事件（对应 SDK 的 S() → onCancelOTA()）
+                OtaCanceled?.Invoke(this, EventArgs.Empty);
+                XTrace.WriteLine("[OtaManager] 触发 OtaCanceled 事件");
+                
                 CleanupResources();
                 return true;
             }
@@ -756,6 +789,11 @@ public class OtaManager : IOtaManager
             {
                 XTrace.WriteLine($"[OtaManager] 退出更新模式异常: {ex.Message}");
                 ChangeState(OtaState.Failed);
+                
+                // 触发 OTA 取消事件（对应 SDK 的 S() → onCancelOTA()）
+                OtaCanceled?.Invoke(this, EventArgs.Empty);
+                XTrace.WriteLine("[OtaManager] 触发 OtaCanceled 事件");
+                
                 CleanupResources();
                 return true;  // SDK 的 onResult 和 onError 都会调用 S()，所以无论如何都返回 true
             }
@@ -814,6 +852,10 @@ public class OtaManager : IOtaManager
     /// <summary>触发重连流程（对应 SDK 的 onNeedReconnect + WaitForReconnectAsync）</summary>
     private async Task TriggerReconnectFlowAsync(ReconnectInfo reconnectInfo)
     {
+        // 触发需要重连事件（对应 SDK 的 Rt(t) → onNeedReconnect(t)）
+        NeedReconnect?.Invoke(this, reconnectInfo);
+        XTrace.WriteLine($"[OtaManager] 触发 NeedReconnect 事件（P超时触发）: {reconnectInfo.DeviceAddress:X12}");
+        
         try
         {
             var reconnectedDevice = await _reconnectService.WaitForReconnectAsync(

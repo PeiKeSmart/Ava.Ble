@@ -1,7 +1,7 @@
 namespace JieLi.OTA.Application.Services;
 
 /// <summary>重连信息（对应小程序SDK的 ReConnectMsg）</summary>
-internal class ReconnectInfo
+public class ReconnectInfo
 {
     /// <summary>原始设备 MAC 地址</summary>
     public ulong DeviceAddress { get; set; }
