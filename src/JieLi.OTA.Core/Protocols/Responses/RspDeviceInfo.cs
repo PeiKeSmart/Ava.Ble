@@ -5,7 +5,7 @@ namespace JieLi.OTA.Core.Protocols.Responses;
 /// <summary>设备信息响应</summary>
 public class RspDeviceInfo : RcspResponse
 {
-    /// <summary>设备名称</summary>
+    /// <summary>设备名称(对应SDK case 16: name)</summary>
     public string DeviceName { get; set; } = string.Empty;
 
     /// <summary>固件版本名称</summary>
@@ -17,8 +17,35 @@ public class RspDeviceInfo : RcspResponse
     /// <summary>设备类型</summary>
     public byte DeviceType { get; set; }
 
-    /// <summary>电池电量 (0-100)</summary>
+    /// <summary>电池电量(对应SDK case 1: quantity, 0-100)</summary>
     public byte BatteryLevel { get; set; }
+
+    /// <summary>音量(对应SDK case 1: volume)</summary>
+    public byte Volume { get; set; }
+
+    /// <summary>最大音量(对应SDK case 1: maxVol)</summary>
+    public byte MaxVolume { get; set; }
+
+    /// <summary>是否支持音量同步(对应SDK case 1: supportVolumeSync)</summary>
+    public bool SupportVolumeSync { get; set; }
+
+    /// <summary>EDR蓝牙地址(对应SDK case 2: edrAddr)</summary>
+    public string EdrAddress { get; set; } = string.Empty;
+
+    /// <summary>EDR配置文件(对应SDK case 2: edrProfile)</summary>
+    public byte EdrProfile { get; set; }
+
+    /// <summary>EDR状态(对应SDK case 2: edrStatus)</summary>
+    public byte EdrStatus { get; set; }
+
+    /// <summary>是否支持包CRC16(对应SDK case 21: supportPackageCrc16)</summary>
+    public bool SupportPackageCrc16 { get; set; }
+
+    /// <summary>是否支持按文件名从设备获取文件(对应SDK case 21: getFileByNameWithDev)</summary>
+    public bool GetFileByNameWithDev { get; set; }
+
+    /// <summary>是否通过小文件传输联系人(对应SDK case 21: contactsTransferBySmallFile)</summary>
+    public bool ContactsTransferBySmallFile { get; set; }
 
     /// <summary>是否支持双备份</summary>
     public bool IsSupportDoubleBackup { get; set; }
@@ -87,14 +114,32 @@ public class RspDeviceInfo : RcspResponse
                 // 根据 Type 解析不同的字段
                 switch (type)
                 {
-                    case 1: // 设备名称
-                        if (length > 0)
-                            DeviceName = System.Text.Encoding.UTF8.GetString(value);
+                    case 1: // 电量+音量+同步标志 (对应SDK case 1)
+                        // SDK: this.quantity=255&s[0],s.length>2&&(this.volume=255&s[1],this.maxVol=255&s[2]),
+                        //      s.length>3&&(this.supportVolumeSync=1==(1&s[3]))
+                        if (length >= 1)
+                            BatteryLevel = value[0];
+                        if (length >= 3)
+                        {
+                            Volume = value[1];
+                            MaxVolume = value[2];
+                        }
+                        if (length >= 4)
+                            SupportVolumeSync = (value[3] & 1) == 1;
                         break;
 
-                    case 2: // 固件版本字符串
-                        if (length > 0)
-                            VersionName = System.Text.Encoding.UTF8.GetString(value);
+                    case 2: // EDR地址+profile+状态 (对应SDK case 2)
+                        // SDK: this.edrAddr=o(t), this.edrProfile=255&s[6], this.edrStatus=255&s[7]
+                        if (length >= 6)
+                        {
+                            EdrAddress = $"{value[0]:X2}:{value[1]:X2}:{value[2]:X2}:" +
+                                        $"{value[3]:X2}:{value[4]:X2}:{value[5]:X2}";
+                        }
+                        if (length >= 8)
+                        {
+                            EdrProfile = value[6];
+                            EdrStatus = value[7];
+                        }
                         break;
 
                     case 3: // Platform和CommunicationWay (对应SDK的 case 3)
@@ -151,9 +196,22 @@ public class RspDeviceInfo : RcspResponse
                         // sendMtu 和 receiveMtu (可选)
                         break;
 
-                    case 21: // 电池电量
+                    case 16: // 设备名称 (对应SDK case 16: name)
+                        // SDK: this.name=String.fromCharCode.apply(null,Array.from(s))
+                        if (length > 0)
+                            DeviceName = System.Text.Encoding.UTF8.GetString(value);
+                        break;
+
+                    case 21: // 包CRC16+文件传输功能 (对应SDK case 21)
+                        // SDK: s.length>=4&&(this.supportPackageCrc16=1==(1&s[0]),
+                        //      this.getFileByNameWithDev=2==(2&s[0]),
+                        //      this.contactsTransferBySmallFile=4==(4&s[0]))
                         if (length >= 1)
-                            BatteryLevel = value[0];
+                        {
+                            SupportPackageCrc16 = (value[0] & 1) == 1;
+                            GetFileByNameWithDev = (value[0] & 2) == 2;
+                            ContactsTransferBySmallFile = (value[0] & 4) == 4;
+                        }
                         break;
 
                     case 22: // MAC 地址 (6字节)
@@ -178,8 +236,9 @@ public class RspDeviceInfo : RcspResponse
 
     public override string ToString()
     {
-        return $"Device: {DeviceName}, Version: {VersionName} ({VersionCode}), Battery: {BatteryLevel}%, " +
+        return $"Device: {DeviceName}, Version: {VersionName} ({VersionCode}), " +
+               $"Battery: {BatteryLevel}%, Volume: {Volume}/{MaxVolume}, " +
                $"DoubleBackup: {IsSupportDoubleBackup}, NeedBootLoader: {IsNeedBootLoader}, " +
-               $"Mandatory: {IsMandatoryUpgrade}, MAC: {BleMac}";
+               $"Mandatory: {IsMandatoryUpgrade}, MAC: {BleMac}, EDR: {EdrAddress}";
     }
 }

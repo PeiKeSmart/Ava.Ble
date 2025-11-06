@@ -155,6 +155,36 @@ public class RcspProtocol : IRcspProtocol, IDisposable
         }
     }
 
+    /// <summary>退出更新模式(对应SDK: exitUpdateMode)</summary>
+    /// <remarks>
+    /// 对应SDK: s.A.exitUpdateMode({onResult(t, r){...}, onError(e, r, n){...}})
+    /// OpCode: 0xE4 (CMD_OTA_EXIT_UPDATE_MODE=228)
+    /// 响应: m类(RspCanUpdate), result字段标识退出结果
+    /// 仅在双备份模式下取消OTA升级时调用
+    /// </remarks>
+    public async Task<bool> ExitUpdateModeAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+
+        try
+        {
+            XTrace.WriteLine("[RcspProtocol] 退出更新模式...");
+
+            var command = new CmdExitUpdateMode();
+            var response = await _dataHandler.SendCommandAsync<RspCanUpdate>(command, 5000, cancellationToken);
+
+            var success = response.CanUpdate;
+            XTrace.WriteLine($"[RcspProtocol] 退出更新模式: {(success ? "成功" : "失败")}, Result=0x{response.Result:X2}");
+
+            return success;
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteException(ex);
+            throw;
+        }
+    }
+
     /// <summary>通知文件大小</summary>
     public async Task<bool> NotifyFileSizeAsync(uint fileSize, CancellationToken cancellationToken = default)
     {

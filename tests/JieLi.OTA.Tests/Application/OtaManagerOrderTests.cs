@@ -100,6 +100,8 @@ public class OtaManagerOrderTests
             => throw new NotImplementedException();
         public Task<bool> EnterUpdateModeAsync(CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+        public Task<bool> ExitUpdateModeAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(true); // Mock 实现，模拟退出更新模式成功
         public Task<bool> NotifyFileSizeAsync(uint fileSize, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
         public Task<TResponse> SendCommandAsync<TResponse>(RcspCommand command, int timeoutMs = 5000, CancellationToken cancellationToken = default) where TResponse : RcspResponse, new()

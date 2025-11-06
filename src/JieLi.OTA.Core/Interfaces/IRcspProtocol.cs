@@ -27,6 +27,15 @@ public interface IRcspProtocol
     /// <returns>是否成功</returns>
     Task<bool> EnterUpdateModeAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>退出更新模式(对应SDK: exitUpdateMode)</summary>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>是否成功</returns>
+    /// <remarks>
+    /// SDK定义: s.A.exitUpdateMode({onResult, onError})
+    /// 仅在双备份模式下取消OTA升级时调用
+    /// </remarks>
+    Task<bool> ExitUpdateModeAsync(CancellationToken cancellationToken = default);
+
     /// <summary>通知文件大小</summary>
     /// <param name="fileSize">文件大小</param>
     /// <param name="cancellationToken">取消令牌</param>

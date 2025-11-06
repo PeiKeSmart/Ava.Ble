@@ -827,10 +827,10 @@ public class OtaManager : IOtaManager
             {
                 if (_protocol != null)
                 {
-                    // 对应 SDK: this.A.exitUpdateMode(e)
-                    // 注意：当前 IRcspProtocol 可能还没有 ExitUpdateModeAsync 方法
-                    // 暂时使用通用错误码触发取消
-                    XTrace.WriteLine("[OtaManager] TODO: 需要实现 ExitUpdateModeAsync 协议方法");
+                    // 对应 SDK: this.A.exitUpdateMode({onResult, onError})
+                    // OpCode: 0xE4 (CMD_OTA_EXIT_UPDATE_MODE)
+                    await _protocol.ExitUpdateModeAsync();
+                    XTrace.WriteLine("[OtaManager] 退出更新模式成功");
                 }
                 
                 ChangeState(OtaState.Failed);
@@ -848,6 +848,7 @@ public class OtaManager : IOtaManager
                 ChangeState(OtaState.Failed);
                 
                 // 触发 OTA 取消事件（对应 SDK 的 S() → onCancelOTA()）
+                // SDK: onError 也会调用 s.S() → onCancelOTA()
                 OtaCanceled?.Invoke(this, EventArgs.Empty);
                 XTrace.WriteLine("[OtaManager] 触发 OtaCanceled 事件");
                 
